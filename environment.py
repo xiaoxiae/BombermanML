@@ -484,6 +484,13 @@ class BombeRLeWorld(GenericWorld):
     def end_round(self):
         super().end_round()
 
+        # For calculating elo
+        with open("elo/elo.log", "a") as f:
+            a, b = self.agents
+
+            symbol = "=" if a.score == b.score else "<" if a.score < b.score else ">"
+            f.write(f"{a.code_name} {symbol} {b.code_name}\n")
+
         self.logger.info(f'WRAPPING UP ROUND #{self.round}')
         # Clean up survivors
         for a in self.active_agents:
