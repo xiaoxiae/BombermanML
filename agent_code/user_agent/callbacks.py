@@ -2,7 +2,6 @@ import math
 from random import choice
 
 from .train import *
-from .train import _state_to_features
 
 cwd = os.path.abspath(os.path.dirname(__file__))
 
@@ -12,7 +11,7 @@ def setup(self):
         self.model = torch.load(f"{cwd}/policy-model.pt")
 
 
-def act(self, game_state: GameState) -> str:
+def act(self, game_state: Game) -> str:
     """Perform the most probable action when in practice, otherwise use epsilon-decay for better training."""
     if self.train:
         steps = game_state["step"]
@@ -25,7 +24,7 @@ def act(self, game_state: GameState) -> str:
             return action
 
     with torch.no_grad():
-        model_result = self.model(_state_to_features(game_state))
+        model_result = self.model(state_to_features(game_state))
 
     action = ACTIONS[model_result.max(1)[1].item()]
     self.logger.debug(f"Action weights: {model_result}, picking {action}.")
