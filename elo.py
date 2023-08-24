@@ -1,7 +1,7 @@
-import os
-import json
-from random import choice
 import argparse
+import json
+import os
+from random import choice
 
 base_agents = [
     "coin_collector_agent",
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("-n",
                         help="Number of games to play. Defaults to 1000.", action='store_const', default=1000)
     parser.add_argument("-k",
-                        help="The k-factor for calculating the elo. Defaults to 32.", action='store_const', default=32)
+                        help="The k-factor for calculating the elo. Defaults to 10.", action='store_const', default=10)
 
     subparsers = parser.add_subparsers(dest="mode")
 
@@ -54,6 +54,9 @@ if __name__ == "__main__":
 
     base_subparser = subparsers.add_parser("base",
                                            help="Generates the elos for the base agents.")
+
+    base_subparser.add_argument("--recalculate", help="Recalculate the elos only, don't play the games.",
+                                action='store_true')
 
     arguments = parser.parse_args()
     games_to_play = {}
@@ -70,8 +73,11 @@ if __name__ == "__main__":
         for i in range(len(base_agents)):
             games_to_play[(arguments.agent, base_agents[i])] = arguments.n
 
-    play_games(games_to_play)
-    results = load_results()
+    if arguments.mode == 'agent' or (arguments.mode == 'base' and not arguments.recalculate):
+        play_games(games_to_play)
+        results = load_results()
+    else:
+        results = json.load(open(STATS_FILE))["base_games"]
 
     if arguments.mode == 'base':
         stats = {
@@ -83,7 +89,6 @@ if __name__ == "__main__":
         benchmark_agent_elo = 1000
 
     for a1, result, a2 in results:
-        # https://www.omnicalculator.com/sports/elo
         a = stats["base"][a1] if a1 in stats["base"] else stats["other"]
         b = stats["base"][a2] if a2 in stats["base"] else stats["other"]
         score = 1 if result == ">" else 0.5 if result == "=" else 0
