@@ -89,8 +89,8 @@ if __name__ == "__main__":
         benchmark_agent_elo = 1000
 
     for a1, result, a2 in results:
-        a = stats["base"][a1] if a1 in stats["base"] else stats["other"]
-        b = stats["base"][a2] if a2 in stats["base"] else stats["other"]
+        a = stats["base"][a1] if a1 in stats["base"] else stats["other"][a1]
+        b = stats["base"][a2] if a2 in stats["base"] else stats["other"][a2]
         score = 1 if result == ">" else 0.5 if result == "=" else 0
 
         expected = 1 / (10 ** ((b - a) / 400) + 1)
