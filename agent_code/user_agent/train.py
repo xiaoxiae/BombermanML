@@ -449,7 +449,7 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
     game_rewards = {
         # hunt coins
         MOVED_TOWARD_COIN: 10,
-        DID_NOT_MOVE_TOWARD_COIN: -15,
+        DID_NOT_MOVE_TOWARD_COIN: -25,
         e.COIN_COLLECTED: 50,
         # blow up crates
         MOVED_TOWARD_CRATE: 1,
@@ -459,7 +459,7 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
         e.GOT_KILLED: -1000,
         e.INVALID_ACTION: -10,
         MOVED_TOWARD_SAFETY: 100,
-        DID_NOT_MOVE_TOWARD_SAFETY: -100,
+        DID_NOT_MOVE_TOWARD_SAFETY: -1000,
         # be active!
         e.WAITED: -5,
         # meaningful bombs
