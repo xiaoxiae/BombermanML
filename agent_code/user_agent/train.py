@@ -16,6 +16,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from functools import cache
+
 import settings as s
 import events as e
 
@@ -169,7 +171,8 @@ def _get_blast_coords(game_state: Game, x: int, y: int):
 def _next_game_state(game_state: Game, action: str) -> Game | None:
     """Return a new game state by progressing the current one given the action.
     Assumes that all other players stand perfectly still."""
-    game_state = copy.deepcopy(game_state)
+    game_state = copy.copy(game_state)
+    game_state['bombs'] = list(game_state['bombs'])
 
     # 1. self.poll_and_run_agents() - only us move
     (name, score, bomb, (x, y)) = game_state['self']
@@ -193,7 +196,7 @@ def _next_game_state(game_state: Game, action: str) -> Game | None:
     # 2. self.collect_coins() - not important for now
 
     # 3. self.update_explosions()
-    game_state["explosion_map"] = np.clip(game_state["explosion_map"] - 1, 0, np.inf)
+    game_state["explosion_map"] = np.clip(game_state["explosion_map"] - 1, 0, None)
 
     # 4. self.update_bombs()
     i = 0
@@ -224,15 +227,19 @@ def _next_game_state(game_state: Game, action: str) -> Game | None:
 
 
 def _can_escape_after_placement(game_state: Game) -> bool:
-    game_state = copy.deepcopy(game_state)
+    game_state = copy.copy(game_state)
 
     x, y = game_state['self'][3]
-    game_state['bombs'].append(((x, y), s.BOMB_TIMER - 1))
+    game_state['bombs'] = list(game_state['bombs']) + [((x, y), s.BOMB_TIMER - 1)]
 
     return _directions_to_safety(game_state) != 0
 
 
 def _directions_to_coins(game_state: Game) -> list[int]:
+    # no coins
+    if len(game_state['coins']) == 0:
+        return []
+
     start = game_state["self"][-1]
     queue = deque([(game_state, 0)])
     explored = {start: None}
@@ -244,7 +251,7 @@ def _directions_to_coins(game_state: Game) -> list[int]:
         current_game_state, distance = queue.popleft()
         current = current_game_state['self'][-1]
 
-        if len(candidates) != 0 and candidate_distance < distance:
+        if candidate_distance is not None and candidate_distance < distance:
             break
 
         if current in current_game_state["coins"]:
@@ -278,6 +285,10 @@ def _directions_to_coins(game_state: Game) -> list[int]:
 
 
 def _directions_to_crates(game_state: Game) -> list[int]:
+    # no crates
+    if 1 not in game_state['field']:
+        return []
+
     start = game_state["self"][-1]
     queue = deque([(game_state, 0)])
     explored = {start: None}
@@ -289,7 +300,7 @@ def _directions_to_crates(game_state: Game) -> list[int]:
         current_game_state, distance = queue.popleft()
         current = current_game_state['self'][-1]
 
-        if len(candidates) != 0 and candidate_distance < distance:
+        if candidate_distance is not None and candidate_distance < distance:
             break
 
         for (dx, dy), action in zip(DELTAS, ACTIONS):
@@ -319,46 +330,6 @@ def _directions_to_crates(game_state: Game) -> list[int]:
                 continue
 
     return list(candidates)
-
-
-# def _directions_to_crates(game_state: Game) -> list[int]:
-#    # TODO: I'm copy pasted!
-#    start = game_state["self"][-1]
-#    queue = deque([(start, 0)])
-#    explored = {start: None}
-#
-#    candidates = set([])
-#    candidate_distance = None
-#
-#    while len(queue) != 0:
-#        current, distance = queue.popleft()
-#
-#        if len(candidates) != 0 and candidate_distance < distance:
-#            break
-#
-#        if game_state["field"][current[0]][current[1]] == 1:
-#            if explored[current] == start:
-#                return [4]
-#
-#            while explored[current] != start:
-#                current = explored[current]
-#
-#            candidates.add(DELTAS.index((current[0] - start[0], current[1] - start[1])))
-#            candidate_distance = distance
-#            continue
-#
-#        for dx, dy in DELTAS:
-#            neighbor = (current[0] + dx, current[1] + dy)
-#
-#            if neighbor in explored:
-#                continue
-#
-#            explored[neighbor] = current
-#
-#            if game_state["field"][neighbor[0]][neighbor[1]] in [0, 1]:
-#                queue.append((neighbor, distance + 1))
-#
-#    return list(candidates)
 
 
 def _get_validity_vector(game_state: Game) -> list[int]:
@@ -404,16 +375,16 @@ def _directions_to_safety(game_state) -> list[int]:
     return [ACTIONS.index(action) for action in valid_actions]
 
 
-def state_to_features(game_state: Game | None) -> torch.Tensor | None:
-    """
-    # 0..4 - direction to closest coin
-    # 5..9 - direction to closest crate
-    # 10..14 - direction to where placing a bomb will hurt another player  # TODO
-    # 15..19 - direction to safety; has a one only if is in danger
-    # 20 - can we place a bomb (and live to tell the tale)?
-    """
-    if game_state is None:
-        return None
+@cache
+def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
+    game_state = {
+        'field': np.array(game_state[0]),
+        'bombs': list(game_state[1]),
+        'explosion_map': np.array(game_state[2]),
+        'coins': list(game_state[3]),
+        'self': game_state[4],
+        'others': list(game_state[5]),
+    }
 
     feature_vector = [0] * (5 + 5 + 5 + 5 + 1)
 
@@ -438,6 +409,29 @@ def state_to_features(game_state: Game | None) -> torch.Tensor | None:
         feature_vector[20] = 1
 
     return torch.tensor([feature_vector], device=device, dtype=torch.float)
+
+
+def state_to_features(game_state: Game | None) -> torch.Tensor | None:
+    """
+    # 0..4 - direction to closest coin
+    # 5..9 - direction to closest crate
+    # 10..14 - direction to where placing a bomb will hurt another player  # TODO
+    # 15..19 - direction to safety; has a one only if is in danger
+    # 20 - can we place a bomb (and live to tell the tale)?
+    """
+    if game_state is None:
+        return None
+
+    return _state_to_features(
+        (
+            tuple(tuple(r) for r in game_state['field']),
+            tuple(game_state['bombs']),
+            tuple(tuple(r) for r in game_state['explosion_map']),
+            tuple(game_state['coins']),
+            game_state['self'],
+            tuple(game_state['others']),
+        )
+    )
 
 
 def _is_bomb_useful(game_state):
@@ -542,9 +536,16 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 
 def setup_training(self):
-    self.policy_model = DQN(FEATURE_SIZE, len(ACTIONS)).to(device)
-    self.target_model = DQN(FEATURE_SIZE, len(ACTIONS)).to(device)
-    self.target_model.load_state_dict(self.policy_model.state_dict())
+    if os.path.exists(POLICY_MODEL_PATH):
+        self.policy_model = torch.load(POLICY_MODEL_PATH)
+    else:
+        self.policy_model = DQN(FEATURE_SIZE, len(ACTIONS)).to(device)
+
+    if os.path.exists(TARGET_MODEL_PATH):
+        self.target_model = torch.load(TARGET_MODEL_PATH)
+    else:
+        self.target_model = DQN(FEATURE_SIZE, len(ACTIONS)).to(device)
+        self.target_model.load_state_dict(self.policy_model.state_dict())
 
     self.model = self.policy_model
 
