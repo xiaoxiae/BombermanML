@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from functools import cache
+from functools import lru_cache
 
 import settings as s
 import events as e
@@ -375,7 +375,7 @@ def _directions_to_safety(game_state) -> list[int]:
     return [ACTIONS.index(action) for action in valid_actions]
 
 
-@cache
+@lru_cache(maxsize=10000)
 def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
     game_state = {
         'field': np.array(game_state[0]),
