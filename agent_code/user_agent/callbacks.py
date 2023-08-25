@@ -8,7 +8,7 @@ cwd = os.path.abspath(os.path.dirname(__file__))
 
 def setup(self):
     if not self.train:
-        self.model = torch.load(POLICY_MODEL_PATH)
+        self.model = torch.load(TARGET_MODEL_PATH)
 
 
 def act(self, game_state: Game) -> str:

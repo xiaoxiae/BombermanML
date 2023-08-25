@@ -37,10 +37,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
-BATCH_SIZE = 128  # number of transitions sampled from replay buffer
+BATCH_SIZE = 256  # number of transitions sampled from replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
 EPS_START = 0.9  # starting value of epsilon (for taking random actions)
-EPS_END = 0.1  # ending value of epsilon
+EPS_END = 0.05  # ending value of epsilon
 EPS_DECAY = 10  # how many steps until full epsilon decay
 TAU = 0.05  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
@@ -89,16 +89,19 @@ class ReplayMemory(object):
 
 class DQN(nn.Module):
 
-    def __init__(self, n_observations: int, n_actions: int, hidden_size: int = 128):
+    def __init__(self, n_observations: int, n_actions: int, hidden_size: int = 1024, hidden_count: int = 1):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, hidden_size)
-        self.layer2 = nn.Linear(hidden_size, hidden_size)
-        self.layer3 = nn.Linear(hidden_size, n_actions)
+
+        self.layers = nn.ModuleList(
+            [nn.Linear(n_observations, hidden_size)] \
+            + [nn.Linear(hidden_size, hidden_size) for _ in range(hidden_count)] \
+            + [nn.Linear(hidden_size, n_actions)]
+        )
 
     def forward(self, x: torch.Tensor):
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        return self.layer3(x)
+        for layer in self.layers[:-1]:
+            x = F.relu(layer(x))
+        return self.layers[-1](x)
 
 
 def _optimize_model(self):
@@ -352,7 +355,6 @@ def _directions_to_safety(game_state) -> list[int]:
     if not _is_in_danger(game_state):
         return []
 
-    x, y = game_state['self'][3]
     queue = deque([(game_state, [])])
 
     valid_actions = set()
@@ -399,6 +401,10 @@ def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
     if v := _directions_to_safety(game_state):
         for i in v:
             feature_vector[i + 15] = 1
+
+        # if we can get to safety by something other than waiting, don't wait
+        if v != [4]:
+            feature_vector[19] = 0
 
         # if we need to run, mask other features
         for i in range(3):
@@ -448,11 +454,12 @@ def _is_bomb_useful(game_state):
 def _reward_from_events(self, events: list[str]) -> torch.Tensor:
     game_rewards = {
         # hunt coins
-        MOVED_TOWARD_COIN: 10,
+        MOVED_TOWARD_COIN: 20,
         DID_NOT_MOVE_TOWARD_COIN: -25,
         e.COIN_COLLECTED: 50,
         # blow up crates
         MOVED_TOWARD_CRATE: 1,
+        #MOVED_TOWARD_CRATE_WITH_COIN: 10,  # TODO: vector direction_to_bomb_exploding_coin_crate
         # basic stuff
         e.KILLED_OPPONENT: 500,
         e.KILLED_SELF: -1000,
@@ -550,7 +557,7 @@ def setup_training(self):
     self.model = self.policy_model
 
     self.optimizer = OPTIMIZER(self.policy_model.parameters(), lr=LR, amsgrad=True)
-    self.memory = ReplayMemory(1000)
+    self.memory = ReplayMemory(20000)
 
     self.max_score = 0
 
