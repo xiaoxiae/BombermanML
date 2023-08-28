@@ -40,11 +40,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
-BATCH_SIZE = 256  # number of transitions sampled from replay buffer
+BATCH_SIZE = 128  # number of transitions sampled from replay buffer
+MEMORY_SIZE = 1000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
 EPS_START = 0.5  # starting value of epsilon (for taking random actions)
 EPS_END = 0.05  # ending value of epsilon
-EPS_DECAY = 5  # how many steps until full epsilon decay
+EPS_DECAY = 10  # how many steps until full epsilon decay
 TAU = 1e-3  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
@@ -169,7 +170,7 @@ def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
 @cache
 def _get_blast_coords(x: int, y: int) -> tuple[tuple[int, int]]:
     if EMPTY_FIELD[x][y] == -1:
-        return []
+        return tuple()
 
     blast_coords = [(x, y)]
 
@@ -195,22 +196,38 @@ def _get_blast_coords(x: int, y: int) -> tuple[tuple[int, int]]:
 
 def _next_game_state(game_state: Game, action: str) -> Game | None:
     """Return a new game state by progressing the current one given the action.
-    Assumes that all other players stand perfectly still."""
+    Assumes that all other players stand perfectly still.
+    If the action is invalid, returns None."""
     game_state = copy.copy(game_state)
     game_state['bombs'] = list(game_state['bombs'])
 
     # 1. self.poll_and_run_agents() - only us move
     (name, score, bomb, (x, y)) = game_state['self']
-    if action == 'UP' and _tile_is_free(game_state, x, y - 1):
-        y -= 1
-    elif action == 'DOWN' and _tile_is_free(game_state, x, y + 1):
-        y += 1
-    elif action == 'LEFT' and _tile_is_free(game_state, x - 1, y):
-        x -= 1
-    elif action == 'RIGHT' and _tile_is_free(game_state, x + 1, y):
-        x += 1
-    elif action == 'BOMB' and game_state['self'][2]:
-        game_state['bombs'].append(((x, y), s.BOMB_TIMER))
+    if action == 'UP':
+        if _tile_is_free(game_state, x, y - 1):
+            y -= 1
+        else:
+            return None
+    elif action == 'DOWN':
+        if _tile_is_free(game_state, x, y + 1):
+            y += 1
+        else:
+            return None
+    elif action == 'LEFT':
+        if _tile_is_free(game_state, x - 1, y):
+            x -= 1
+        else:
+            return None
+    elif action == 'RIGHT':
+        if _tile_is_free(game_state, x + 1, y):
+            x += 1
+        else:
+            return None
+    elif action == 'BOMB':
+        if game_state['self'][2]:
+            game_state['bombs'].append(((x, y), s.BOMB_TIMER))
+        else:
+            return None
     elif action == 'WAIT':
         pass
     else:
@@ -224,6 +241,7 @@ def _next_game_state(game_state: Game, action: str) -> Game | None:
     game_state["explosion_map"] = np.clip(game_state["explosion_map"] - 1, 0, None)
 
     # 4. self.update_bombs()
+    game_state['field'] = np.array(game_state['field'])
     i = 0
     while i < len(game_state['bombs']):
         ((x, y), t) = game_state['bombs'][i]
@@ -436,6 +454,7 @@ def _directions_to_safety(game_state) -> list[int]:
         current_game_state, action_history = queue.popleft()
 
         if not _is_in_danger(current_game_state):
+
             valid_actions.add(action_history[0])
             continue
 
@@ -543,10 +562,11 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
         DID_NOT_MOVE_TOWARD_PLAYER: -10,
         # blow up crates
         MOVED_TOWARD_CRATE: 5,
+        DID_NOT_MOVE_TOWARD_CRATE: -5,
         # basic stuff
         e.GOT_KILLED: -1000,
-        e.KILLED_SELF: -5000,
-        e.SURVIVED_ROUND: 5000,
+        e.KILLED_SELF: -1000,
+        e.SURVIVED_ROUND: 1000,
         e.INVALID_ACTION: -10,
         MOVED_TOWARD_SAFETY: 100,
         DID_NOT_MOVE_TOWARD_SAFETY: -1000,
@@ -565,7 +585,9 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
             reward_sum += game_rewards[event]
 
     self.logger.debug(f"Awarded {reward_sum} for events {', '.join(events)}")
-    # print(f"Awarded {reward_sum} for events {', '.join(events)}")
+
+    if self.manual:
+        print(f"Awarded {reward_sum} for events {', '.join(events)}")
 
     return torch.tensor([reward_sum], device=device, dtype=torch.float)
 
@@ -579,41 +601,40 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
     state_list = state.tolist()[0]
 
     # don't add more events to an invalid action, because it's just invalid
-    if not e.INVALID_ACTION in events:
-        moving_events = [
-            (MOVED_TOWARD_COIN, DID_NOT_MOVE_TOWARD_COIN, 0, 5),
-            (MOVED_TOWARD_CRATE, DID_NOT_MOVE_TOWARD_CRATE, 5, 10),
-            (MOVED_TOWARD_PLAYER, DID_NOT_MOVE_TOWARD_PLAYER, 10, 15),
-            (MOVED_TOWARD_SAFETY, DID_NOT_MOVE_TOWARD_SAFETY, 15, 20),
-        ]
+    moving_events = [
+        (MOVED_TOWARD_COIN, DID_NOT_MOVE_TOWARD_COIN, 0, 5),
+        (MOVED_TOWARD_CRATE, DID_NOT_MOVE_TOWARD_CRATE, 5, 10),
+        (MOVED_TOWARD_PLAYER, DID_NOT_MOVE_TOWARD_PLAYER, 10, 15),
+        (MOVED_TOWARD_SAFETY, DID_NOT_MOVE_TOWARD_SAFETY, 15, 20),
+    ]
 
-        for pos_event, neg_event, i, j in moving_events:
-            if np.isclose(sum(state_list[i:j]), 0):
-                continue
+    for pos_event, neg_event, i, j in moving_events:
+        if np.isclose(sum(state_list[i:j]), 0):
+            continue
 
-            for i in range(i, j):
-                if np.isclose(state_list[i], 1) and self_action == ACTIONS[i % 5]:
-                    events.append(pos_event)
-                    break
-            else:
-                events.append(neg_event)
+        for i in range(i, j):
+            if np.isclose(state_list[i], 1) and self_action == ACTIONS[i % 5]:
+                events.append(pos_event)
+                break
+        else:
+            events.append(neg_event)
 
-        if self_action == "BOMB":
-            if _is_bomb_useful(old_game_state) and state_list[20] == 1:
-                events.append(PLACED_USEFUL_BOMB)
-            else:
-                events.append(DID_NOT_PLACE_USEFUL_BOMB)
+    if self_action == "BOMB" and old_game_state['self'][2]:
+        if _is_bomb_useful(old_game_state) and state_list[20] == 1:
+            events.append(PLACED_USEFUL_BOMB)
+        else:
+            events.append(DID_NOT_PLACE_USEFUL_BOMB)
 
-        # if we wait, make sure it's meaningful (i.e. we weren't recommended to move somewhere)
-        if self_action == "WAIT":
-            for i in [j + 5 * i for i in range(3) for j in range(4)]:
-                if state_list[i] == 1:
-                    events.append(USELESS_WAIT)
-                    break
-            else:
-                # waiting near a crate when we can place a bomb is also useless
-                if state_list[20] == 1 and state_list[9] == 1:
-                    events.append(USELESS_WAIT)
+    # if we wait, make sure it's meaningful (i.e. we weren't recommended to move somewhere)
+    if self_action == "WAIT":
+        for i in [j + 5 * i for i in range(3) for j in range(4)]:
+            if state_list[i] == 1:
+                events.append(USELESS_WAIT)
+                break
+        else:
+            # waiting near a crate when we can place a bomb is also useless
+            if state_list[20] == 1 and state_list[9] == 1:
+                events.append(USELESS_WAIT)
 
     reward = _reward_from_events(self, events)
 
@@ -631,9 +652,6 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 
 def setup_training(self):
-    # for manual debugging
-    self.manual = False
-
     if os.path.exists(POLICY_MODEL_PATH):
         self.policy_model = torch.load(POLICY_MODEL_PATH)
     else:
@@ -648,7 +666,7 @@ def setup_training(self):
     self.model = self.policy_model
 
     self.optimizer = OPTIMIZER(self.policy_model.parameters(), lr=LR)
-    self.memory = ReplayMemory(1000)
+    self.memory = ReplayMemory(MEMORY_SIZE)
 
     self.x = [0]
     self.y = [0]

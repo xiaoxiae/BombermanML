@@ -7,15 +7,16 @@ cwd = os.path.abspath(os.path.dirname(__file__))
 
 
 def setup(self):
+    self.manual = False
+
     if not self.train:
-        self.model = torch.load(TARGET_MODEL_PATH)
+        self.model = torch.load(POLICY_MODEL_PATH)
 
 
 def act(self, game_state: Game) -> str:
     """Perform the most probable action when in practice, otherwise use epsilon-decay for better training."""
-    if self.train and self.manual:
+    if self.manual:
         state = state_to_features(game_state)
-        self.logger.info(state)
         print(r"  /       coin        \    /       crate       \    /      player       \    /       safety      \ ")
         print(r" /u    r    d    l    w\  /u    r    d    l    w\  /u    r    d    l    w\  /u    r    d    l    w\  /b\ ")
         print(state.tolist()[0])

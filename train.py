@@ -4,13 +4,10 @@ import os
 
 TASKS = {
     "1": [
-        "--no-gui --agents user_agent --scenario coin-heaven --n-rounds 1000",
+        "--no-gui --agents user_agent --scenario coin-heaven --n-rounds 100",
     ],
     "2": [
-        "--no-gui --agents user_agent --scenario classic --n-rounds 100",
-        "--no-gui --agents user_agent peaceful_agent --scenario classic --n-rounds 100",
-        "--no-gui --agents user_agent --scenario classic --n-rounds 500",
-        "--no-gui --agents user_agent coin_collector_agent --scenario classic --n-rounds 100",
+        "--no-gui --agents user_agent --scenario coin-heaven --n-rounds 10",
         "--no-gui --agents user_agent --scenario classic --n-rounds 1000",
     ]
 }
