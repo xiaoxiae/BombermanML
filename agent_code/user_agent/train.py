@@ -1,9 +1,3 @@
-"""
-Code based on https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-
-Policy/target explained: https://ai.stackexchange.com/questions/21485/how-and-when-should-we-update-the-q-target-in-deep-q-learning
-Exploding gradients: https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem
-"""
 import copy
 import os
 import random
@@ -41,6 +35,35 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
+GAME_REWARDS = {
+    # hunt coins
+    MOVED_TOWARD_COIN: 10,
+    DID_NOT_MOVE_TOWARD_COIN: -100,
+    e.COIN_COLLECTED: 100,
+    # hunt people
+    e.KILLED_OPPONENT: 500,
+    MOVED_TOWARD_PLAYER: 10,
+    DID_NOT_MOVE_TOWARD_PLAYER: -10,
+    # blow up crates
+    MOVED_TOWARD_CRATE: 5,
+    DID_NOT_MOVE_TOWARD_CRATE: -5,
+    # basic stuff
+    e.GOT_KILLED: -1000,
+    e.KILLED_SELF: -1000,
+    e.SURVIVED_ROUND: 1000,
+    e.INVALID_ACTION: -10,
+    MOVED_TOWARD_SAFETY: 100,
+    DID_NOT_MOVE_TOWARD_SAFETY: -1000,
+    # be active!
+    USELESS_WAIT: -100,
+    # meaningful bombs
+    PLACED_USEFUL_BOMB: 50,
+    PLACED_SUPER_USEFUL_BOMB: 100,
+    DID_NOT_PLACE_USEFUL_BOMB: -1000,
+    e.CRATE_DESTROYED: 10,
+    e.COIN_FOUND: 10,
+}
+
 BATCH_SIZE = 128  # number of transitions sampled from replay buffer
 MEMORY_SIZE = 5000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
@@ -50,6 +73,7 @@ EPS_DECAY = 10  # how many steps until full epsilon decay
 TAU = 1e-3  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
+LAYER_SIZES = [1024]  # sizes of hidden layers
 
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
@@ -71,6 +95,7 @@ EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 ])
 
+# paths to the DQN models
 POLICY_MODEL_PATH = f"{cwd}/policy-model.pt"
 TARGET_MODEL_PATH = f"{cwd}/target-model.pt"
 
@@ -80,7 +105,7 @@ Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'
 
 
 class Game(TypedDict):
-    """For typehints."""
+    """For typehints - this is the dictionary we're given by our environment overlords."""
     field: np.ndarray
     bombs: list[tuple[tuple[int, int], int]]
     explosion_map: np.ndarray
@@ -94,6 +119,7 @@ class Game(TypedDict):
 
 
 class ReplayMemory(object):
+    """For storing a defined number of [state + action -> new state + reward] transitions."""
 
     def __init__(self, capacity):
         self.memory = deque([], maxlen=capacity)
@@ -109,14 +135,15 @@ class ReplayMemory(object):
 
 
 class DQN(nn.Module):
+    """The DQN PyTorch implmenetation."""
 
-    def __init__(self, n_observations: int, n_actions: int, hidden_size: int = 1024, hidden_count: int = 1):
+    def __init__(self, n_observations: int, n_actions: int, layer_sizes: list[int]):
         super(DQN, self).__init__()
 
         self.layers = nn.ModuleList(
-            [nn.Linear(n_observations, hidden_size)] \
-            + [nn.Linear(hidden_size, hidden_size) for _ in range(hidden_count)] \
-            + [nn.Linear(hidden_size, n_actions)]
+            [nn.Linear(n_observations, layer_sizes[0])] \
+            + [nn.Linear(layer_sizes[i], layer_sizes[i + 1]) for i in range(len(layer_sizes) - 1)] \
+            + [nn.Linear(layer_sizes[-1], n_actions)]
         )
 
     def forward(self, x: torch.Tensor):
@@ -126,6 +153,11 @@ class DQN(nn.Module):
 
 
 def _optimize_model(self):
+    """
+    Performs one optimization of the model by sampling the replay memory.
+    See https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html for what this is doing.
+    """
+
     if len(self.memory) < BATCH_SIZE:
         return
 
@@ -152,15 +184,13 @@ def _optimize_model(self):
 
     self.optimizer.zero_grad()
     loss.backward()
-    torch.nn.utils.clip_grad_value_(self.policy_model.parameters(), 100)
+    torch.nn.utils.clip_grad_value_(self.policy_model.parameters(), 100)  # TODO: to a variable?
     self.optimizer.step()
 
 
-def _is_alive(game_state: Game) -> bool:
-    return game_state is not None
-
-
 def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
+    """Returns True if a tile is free (i.e. can be stepped on by the player).
+    This also returns false if the tile has an ongoing explosion, since while it is free, we can't step there."""
     for obstacle in [p for (p, _) in game_state['bombs']] + [p for (_, _, _, p) in game_state['others']]:
         if obstacle == (x, y):
             return False
@@ -170,6 +200,7 @@ def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
 
 @cache
 def _get_blast_coords(x: int, y: int) -> tuple[tuple[int, int]]:
+    """For a given bomb at (x, y), return all coordinates affected by its blast."""
     if EMPTY_FIELD[x][y] == -1:
         return tuple()
 
@@ -198,7 +229,7 @@ def _get_blast_coords(x: int, y: int) -> tuple[tuple[int, int]]:
 def _next_game_state(game_state: Game, action: str) -> Game | None:
     """Return a new game state by progressing the current one given the action.
     Assumes that all other players stand perfectly still.
-    If the action is invalid, returns None."""
+    If the action is invalid or the player dies, returns None."""
     game_state = copy.copy(game_state)
     game_state['bombs'] = list(game_state['bombs'])
 
@@ -260,12 +291,12 @@ def _next_game_state(game_state: Game, action: str) -> Game | None:
             i += 1
 
     # 5. self.evaluate_explosions() - kill agents
-    # self
+    # kill self
     x, y = game_state['self'][3]
     if game_state["explosion_map"][x][y] != 0:
         return None  # we died
 
-    # others
+    # kill others
     if len(game_state['others']) != 0:
         i = 0
         game_state['others'] = list(game_state['others'])
@@ -280,15 +311,18 @@ def _next_game_state(game_state: Game, action: str) -> Game | None:
 
 
 def _can_escape_after_placement(game_state: Game) -> bool:
+    """Return True if the player can escape the bomb blast if it were to place a bomb right now."""
     game_state = copy.copy(game_state)
 
     x, y = game_state['self'][3]
     game_state['bombs'] = list(game_state['bombs']) + [((x, y), s.BOMB_TIMER)]
 
+    # if it can escape, it's safe
     return len(_directions_to_safety(game_state)) != 0
 
 
 def _directions_to_coins(game_state: Game) -> list[int]:
+    """Return a list with directions to the closest coin."""
     # no coins
     if len(game_state['coins']) == 0:
         return []
@@ -308,9 +342,11 @@ def _directions_to_coins(game_state: Game) -> list[int]:
             break
 
         if current in current_game_state["coins"]:
+            # if we're standing on it, return 4 (i.e. wait)
             if current == start:
                 return [4]
 
+            # otherwise backtrack
             while explored[current] != start:
                 current = explored[current]
 
@@ -338,6 +374,7 @@ def _directions_to_coins(game_state: Game) -> list[int]:
 
 
 def _directions_to_enemy(game_state: Game):
+    """Return a list with directions to the closest enemy."""
     if len(game_state['others']) == 0:
         return []
 
@@ -364,7 +401,9 @@ def _directions_to_enemy(game_state: Game):
             explored[neighbor] = current
 
             for n in current_game_state['others']:
+                # if placing a bomb would kill another player, we're here
                 if n[-1] in _get_blast_coords(*neighbor):
+                    # if we're at the start, index 4 signals "place a bomb now"
                     if current == start:
                         return [4]
 
@@ -388,6 +427,7 @@ def _directions_to_enemy(game_state: Game):
 
 
 def _directions_to_crates(game_state: Game) -> list[int]:
+    """Return a list with directions to the closest crate."""
     # no crates
     if 1 not in game_state['field']:
         return []
@@ -435,7 +475,8 @@ def _directions_to_crates(game_state: Game) -> list[int]:
     return list(candidates)
 
 
-def _is_in_danger(game_state):
+def _is_in_danger(game_state) -> bool:
+    """Return True if the player will be killed if it doesn't move (i.e. is in danger)."""
     x, y = game_state['self'][3]
     for ((bx, by), _) in game_state['bombs']:
         if (x, y) in _get_blast_coords(bx, by):
@@ -444,6 +485,7 @@ def _is_in_danger(game_state):
 
 
 def _directions_to_safety(game_state) -> list[int]:
+    """Return the directions to safety, if the player is currently in danger of dying."""
     if not _is_in_danger(game_state):
         return []
 
@@ -472,10 +514,10 @@ def _directions_to_safety(game_state) -> list[int]:
 @lru_cache(maxsize=10000)
 def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
     """
-    # 0..4 - direction to closest coin
-    # 5..9 - direction to closest crate
-    # 10..14 - direction to where placing a bomb will hurt another player
-    # 15..19 - direction to safety; has a one only if is in danger
+    # 0..4 - direction to closest coin -- u, r, d, l, wait
+    # 5..9 - direction to closest crate -- u, r, d, l, wait
+    # 10..14 - direction to where placing a bomb will hurt another player -- u, r, d, l, place now
+    # 15..19 - direction to safety; has a one only if is in danger -- u, r, d, l, wait
     # 20 - can we place a bomb (and live to tell the tale)?
     """
     game_state: Game = {
@@ -526,6 +568,8 @@ def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
 
 
 def state_to_features(game_state: Game | None) -> torch.Tensor | None:
+    """A wrapper function so we can cache game states (since you can't cache a dictionary)."""
+
     if game_state is None:
         return None
 
@@ -541,7 +585,8 @@ def state_to_features(game_state: Game | None) -> torch.Tensor | None:
     )
 
 
-def _is_bomb_useful(game_state):
+def _is_bomb_useful(game_state) -> bool:
+    """Return True if the bomb is useful, either by destroying a crate or by killing an enemy."""
     x, y = game_state['self'][3]
     for bx, by in _get_blast_coords(x, y):
         # destroys crate
@@ -556,39 +601,11 @@ def _is_bomb_useful(game_state):
 
 
 def _reward_from_events(self, events: list[str]) -> torch.Tensor:
-    game_rewards = {
-        # hunt coins
-        MOVED_TOWARD_COIN: 10,
-        DID_NOT_MOVE_TOWARD_COIN: -100,
-        e.COIN_COLLECTED: 100,
-        # hunt people
-        e.KILLED_OPPONENT: 500,
-        MOVED_TOWARD_PLAYER: 10,
-        DID_NOT_MOVE_TOWARD_PLAYER: -10,
-        # blow up crates
-        MOVED_TOWARD_CRATE: 5,
-        DID_NOT_MOVE_TOWARD_CRATE: -5,
-        # basic stuff
-        e.GOT_KILLED: -1000,
-        e.KILLED_SELF: -1000,
-        e.SURVIVED_ROUND: 1000,
-        e.INVALID_ACTION: -10,
-        MOVED_TOWARD_SAFETY: 100,
-        DID_NOT_MOVE_TOWARD_SAFETY: -1000,
-        # be active!
-        USELESS_WAIT: -100,
-        # meaningful bombs
-        PLACED_USEFUL_BOMB: 50,
-        PLACED_SUPER_USEFUL_BOMB: 100,
-        DID_NOT_PLACE_USEFUL_BOMB: -1000,
-        e.CRATE_DESTROYED: 10,
-        e.COIN_FOUND: 10,
-    }
-
+    """Utility function for calculating the sum of rewards for events."""
     reward_sum = 0
     for event in events:
-        if event in game_rewards:
-            reward_sum += game_rewards[event]
+        if event in GAME_REWARDS:
+            reward_sum += GAME_REWARDS[event]
 
     self.logger.debug(f"Awarded {reward_sum} for events {', '.join(events)}")
 
@@ -600,13 +617,14 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
 
 def _process_game_event(self, old_game_state: Game, self_action: str,
                         new_game_state: Game | None, events: list[str]):
+    """Called after each step when training. Does the training."""
+
     state = state_to_features(old_game_state)
     new_state = state_to_features(new_game_state)
     action = torch.tensor([[ACTIONS.index(self_action)]], device=device, dtype=torch.long)
 
     state_list = state.tolist()[0]
 
-    # don't add more events to an invalid action, because it's just invalid
     moving_events = [
         (MOVED_TOWARD_COIN, DID_NOT_MOVE_TOWARD_COIN, 0, 5),
         (MOVED_TOWARD_CRATE, DID_NOT_MOVE_TOWARD_CRATE, 5, 10),
@@ -614,6 +632,7 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
         (MOVED_TOWARD_SAFETY, DID_NOT_MOVE_TOWARD_SAFETY, 15, 20),
     ]
 
+    # generate positive/negative events if we move after the objectives
     for pos_event, neg_event, i, j in moving_events:
         if np.isclose(sum(state_list[i:j]), 0):
             continue
@@ -625,9 +644,10 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
         else:
             events.append(neg_event)
 
+    # generate positive/negative bomb events if we place a good/bad bomb
     if self_action == "BOMB" and old_game_state['self'][2]:
         if _is_bomb_useful(old_game_state) and state_list[20] == 1:
-            # if it endangers a player
+            # if it endangers a player, it's super useful; otherwise it's just useful
             if state_list[14]:
                 events.append(PLACED_SUPER_USEFUL_BOMB)
             else:
@@ -650,10 +670,9 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     self.memory.push(state, action, new_state, reward)
 
-    # Optimize
     _optimize_model(self)
 
-    # Soft-update
+    # soft-update the target network
     target_net_state_dict = self.target_model.state_dict()
     policy_net_state_dict = self.policy_model.state_dict()
     for key in policy_net_state_dict:
@@ -662,21 +681,24 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 
 def setup_training(self):
+    """Sets up training - lodas models if they exist + configures plotting (so we see how the model is doing)."""
     if os.path.exists(POLICY_MODEL_PATH):
         self.policy_model = torch.load(POLICY_MODEL_PATH)
     else:
-        self.policy_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS)).to(device)
+        self.policy_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
 
     if os.path.exists(TARGET_MODEL_PATH):
         self.target_model = torch.load(TARGET_MODEL_PATH)
     else:
-        self.target_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS)).to(device)
+        self.target_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
         self.target_model.load_state_dict(self.policy_model.state_dict())
 
     self.model = self.policy_model
 
     self.optimizer = OPTIMIZER(self.policy_model.parameters(), lr=LR)
     self.memory = ReplayMemory(MEMORY_SIZE)
+
+    # TODO: add another plot for event rewards to see if it coorelates with the score (it SHOULD)
 
     self.x = [0]
     self.y = [0]
@@ -688,9 +710,7 @@ def setup_training(self):
 
 
 def game_events_occurred(self, old_game_state: Game, self_action: str, new_game_state: Game, events: list[str]):
-    """
-    Called once per step to allow intermediate rewards based on game events.
-    """
+    """Called once per step to allow intermediate rewards based on game events."""
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     _process_game_event(self, old_game_state, self_action, new_game_state, events)
