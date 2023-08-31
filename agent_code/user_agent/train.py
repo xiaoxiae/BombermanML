@@ -596,7 +596,7 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
                         new_game_state: Game | None, events: list[str]):
     state = state_to_features(old_game_state)
     new_state = state_to_features(new_game_state)
-    action = torch.tensor([[ACTIONS.index(self_action)]], dtype=torch.long)
+    action = torch.tensor([[ACTIONS.index(self_action)]], device=device, dtype=torch.long)
 
     state_list = state.tolist()[0]
 
