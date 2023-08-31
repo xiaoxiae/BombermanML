@@ -24,4 +24,4 @@ if __name__ == "__main__":
             file.unlink()
 
     for command in TASKS[arguments.task]:
-        os.system(f"python3 main.py play --train 1 {command}")
+        os.system(f"python main.py play --train 1 {command}")
