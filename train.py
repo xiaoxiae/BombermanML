@@ -8,7 +8,7 @@ TASKS = {
     ],
     "2": [
         "--no-gui --agents user_agent --scenario coin-heaven --n-rounds 10",
-        "--no-gui --agents user_agent --scenario classic --n-rounds 1000",
+        "--no-gui --agents user_agent peaceful_agent --scenario classic --n-rounds 1000",
     ]
 }
 

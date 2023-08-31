@@ -28,7 +28,7 @@ def act(self, game_state: Game) -> str:
         threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * steps / EPS_DECAY)
 
         if random.random() <= threshold:
-            action = choice(ACTIONS[:5] * 5 + ACTIONS[5:])
+            action = choice(ACTIONS)
             self.logger.info(f"Picking random action of {action}.")
             return action
 

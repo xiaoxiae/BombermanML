@@ -28,6 +28,7 @@ DID_NOT_MOVE_TOWARD_CRATE = "DID_NOT_MOVE_TOWARD_CRATE"
 MOVED_TOWARD_SAFETY = "MOVED_TOWARD_SAFETY"
 DID_NOT_MOVE_TOWARD_SAFETY = "DID_NOT_MOVE_TOWARD_SAFETY"
 PLACED_USEFUL_BOMB = "PLACED_USEFUL_BOMB"
+PLACED_SUPER_USEFUL_BOMB = "PLACED_SUPER_USEFUL_BOMB"
 DID_NOT_PLACE_USEFUL_BOMB = "DID_NOT_PLACE_USEFUL_BOMB"
 MOVED_TOWARD_PLAYER = "MOVED_TOWARD_PLAYER"
 DID_NOT_MOVE_TOWARD_PLAYER = "DID_NOT_MOVE_TOWARD_PLAYER"
@@ -41,9 +42,9 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 BATCH_SIZE = 128  # number of transitions sampled from replay buffer
-MEMORY_SIZE = 1000  # number of transitions to keep in the replay buffer
+MEMORY_SIZE = 5000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
-EPS_START = 0.5  # starting value of epsilon (for taking random actions)
+EPS_START = 0.1  # starting value of epsilon (for taking random actions)
 EPS_END = 0.05  # ending value of epsilon
 EPS_DECAY = 10  # how many steps until full epsilon decay
 TAU = 1e-3  # update rate of the target network
@@ -454,7 +455,6 @@ def _directions_to_safety(game_state) -> list[int]:
         current_game_state, action_history = queue.popleft()
 
         if not _is_in_danger(current_game_state):
-
             valid_actions.add(action_history[0])
             continue
 
@@ -513,6 +513,11 @@ def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
         for i in range(3):
             for j in range(5):
                 feature_vector[j + 5 * i] &= feature_vector[j + 15]
+    else:
+        # TODO: directions away from the bomb
+        #  if an enemy is blocking the way, it's still better to just run away from the bomb
+        #  the code is probably the same but we ignore all player positions
+        pass
 
     if game_state["self"][2] and _can_escape_after_placement(game_state):
         feature_vector[20] = 1
@@ -573,7 +578,8 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
         # be active!
         USELESS_WAIT: -100,
         # meaningful bombs
-        PLACED_USEFUL_BOMB: 100,
+        PLACED_USEFUL_BOMB: 50,
+        PLACED_SUPER_USEFUL_BOMB: 100,
         DID_NOT_PLACE_USEFUL_BOMB: -1000,
         e.CRATE_DESTROYED: 10,
         e.COIN_FOUND: 10,
@@ -621,7 +627,11 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     if self_action == "BOMB" and old_game_state['self'][2]:
         if _is_bomb_useful(old_game_state) and state_list[20] == 1:
-            events.append(PLACED_USEFUL_BOMB)
+            # if it endangers a player
+            if state_list[14]:
+                events.append(PLACED_SUPER_USEFUL_BOMB)
+            else:
+                events.append(PLACED_USEFUL_BOMB)
         else:
             events.append(DID_NOT_PLACE_USEFUL_BOMB)
 
