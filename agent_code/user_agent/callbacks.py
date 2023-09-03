@@ -9,7 +9,7 @@ cwd = os.path.abspath(os.path.dirname(__file__))
 def setup(self):
     self.manual = False
 
-    if not self.train:
+    if not self.train and not self.manual:
         self.model = torch.load(POLICY_MODEL_PATH)
 
 
@@ -18,7 +18,7 @@ def act(self, game_state: Game) -> str:
     if self.manual:
         state = state_to_features(game_state)
         print(r"  /       coin        \    /       crate       \    /      player       \    /       safety      \ ")
-        print(r" /u    r    d    l    w\  /u    r    d    l    w\  /u    r    d    l    w\  /u    r    d    l    w\  /b\ ")
+        print(r" /u    r    d    l    w\  /u    r    d    l    w\  /u    r    d    l    b\  /u    r    d    l    w\  /b\ ")
         print(state.tolist()[0])
         return game_state['user_input']
 

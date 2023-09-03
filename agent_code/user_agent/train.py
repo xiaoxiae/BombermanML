@@ -58,7 +58,7 @@ GAME_REWARDS = {
     USELESS_WAIT: -100,
     # meaningful bombs
     PLACED_USEFUL_BOMB: 50,
-    PLACED_SUPER_USEFUL_BOMB: 100,
+    PLACED_SUPER_USEFUL_BOMB: 150,
     DID_NOT_PLACE_USEFUL_BOMB: -1000,
     e.CRATE_DESTROYED: 10,
     e.COIN_FOUND: 10,
@@ -73,7 +73,7 @@ EPS_DECAY = 10  # how many steps until full epsilon decay
 TAU = 1e-3  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
-LAYER_SIZES = [1024]  # sizes of hidden layers
+LAYER_SIZES = [1024, 1024]  # sizes of hidden layers
 
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
@@ -389,6 +389,21 @@ def _directions_to_enemy(game_state: Game):
         current_game_state, distance = queue.popleft()
         current = current_game_state['self'][-1]
 
+        for n in current_game_state['others']:
+            # if placing a bomb would kill another player, we're here
+            if n[-1] in _get_blast_coords(*current):
+                # if we're at the start, index 4 signals "place a bomb now"
+                if current == start:
+                    return [4]
+
+                while explored[current] != start:
+                    current = explored[current]
+
+                candidates.add(DELTAS.index((current[0] - start[0], current[1] - start[1])))
+                candidate_distance = distance
+
+                break
+
         if candidate_distance is not None and candidate_distance < distance:
             break
 
@@ -400,28 +415,13 @@ def _directions_to_enemy(game_state: Game):
 
             explored[neighbor] = current
 
-            for n in current_game_state['others']:
-                # if placing a bomb would kill another player, we're here
-                if n[-1] in _get_blast_coords(*neighbor):
-                    # if we're at the start, index 4 signals "place a bomb now"
-                    if current == start:
-                        return [4]
+            if _tile_is_free(current_game_state, *neighbor):
+                new_game_state = _next_game_state(current_game_state, action)
 
-                    while explored[current] != start:
-                        current = explored[current]
+                if new_game_state is None:
+                    continue
 
-                    candidates.add(DELTAS.index((current[0] - start[0], current[1] - start[1])))
-                    candidate_distance = distance
-
-                    break
-            else:
-                if _tile_is_free(current_game_state, *neighbor):
-                    new_game_state = _next_game_state(current_game_state, action)
-
-                    if new_game_state is None:
-                        continue
-
-                    queue.append((new_game_state, distance + 1))
+                queue.append((new_game_state, distance + 1))
 
     return list(candidates)
 
@@ -564,6 +564,9 @@ def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
     if game_state["self"][2] and _can_escape_after_placement(game_state):
         feature_vector[20] = 1
 
+    # feature 14 is 'place a bomb to kill player' so that needs to be masked with 20
+    feature_vector[14] &= feature_vector[20]
+
     return torch.tensor([feature_vector], device=device, dtype=torch.float)
 
 
@@ -644,6 +647,13 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
         else:
             events.append(neg_event)
 
+    # 14 means 'place a bomb to kill player' and not 'wait'
+    if state_list[14] == 1:
+        if self_action == 'WAIT':
+            events.remove(MOVED_TOWARD_PLAYER)
+        elif self_action == 'BOMB':
+            events.remove(DID_NOT_MOVE_TOWARD_PLAYER)
+
     # generate positive/negative bomb events if we place a good/bad bomb
     if self_action == "BOMB" and old_game_state['self'][2]:
         if _is_bomb_useful(old_game_state) and state_list[20] == 1:
@@ -657,14 +667,14 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     # if we wait, make sure it's meaningful (i.e. we weren't recommended to move somewhere)
     if self_action == "WAIT":
-        for i in [j + 5 * i for i in range(3) for j in range(4)]:
-            if state_list[i] == 1:
-                events.append(USELESS_WAIT)
-                break
+        # waiting near a crate / player when we can place a bomb is also useless
+        if state_list[20] == 1 and (state_list[9] == 1 or state_list[14] == 1):
+            events.append(USELESS_WAIT)
         else:
-            # waiting near a crate when we can place a bomb is also useless
-            if state_list[20] == 1 and state_list[9] == 1:
-                events.append(USELESS_WAIT)
+            for i in [j + 5 * i for i in range(3) for j in range(4)]:
+                if state_list[i] == 1:
+                    events.append(USELESS_WAIT)
+                    break
 
     reward = _reward_from_events(self, events)
 
