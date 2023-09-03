@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import pickle
 import subprocess
 from collections import namedtuple
@@ -485,6 +486,9 @@ class BombeRLeWorld(GenericWorld):
         super().end_round()
 
         if len(self.agents) == 2:
+            if not os.path.exists('elo'):
+                os.mkdir('elo')
+
             # For calculating elo
             with open("elo/elo.log", "a") as f:
                 a, b = self.agents
