@@ -16,7 +16,7 @@ STATS_FILE = "elo/stats.json"
 
 
 def play_games(games_to_play: dict):
-    """Play games based on the dictionary of agent pair : games to play."""
+    """Play games based on the dictionary of {(agent_1, agent_2): games to play}."""
     if os.path.exists(GAMES_FILE):
         os.remove(GAMES_FILE)
 
@@ -25,7 +25,7 @@ def play_games(games_to_play: dict):
 
         subprocess.Popen(
             ["python3", "main.py", "play", "--agents", a1, a2, "--n-rounds", str(games), "--no-gui"],
-            stdout=subprocess.DEVNULL
+            stdout=subprocess.DEVNULL,
         ).communicate()
 
 
@@ -37,9 +37,7 @@ def load_results():
     return results
 
 
-def print_stats():
-    stats = json.load(open(STATS_FILE))
-
+def print_stats(stats):
     print("Base agents:")
     print(json.dumps(stats['base'], indent=4))
 
@@ -52,39 +50,44 @@ def print_stats():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-n",
-                        help="Number of games to play. Defaults to 100.", action='store_const', default=100)
+    parser.add_argument("-n", help="Number of games. Defaults to 100.", type=int, default=100)
+
     parser.add_argument("-k",
-                        help="The k-factor for calculating the elo. Defaults to 10.", action='store_const', default=10)
+                        help="The k-factor for calculating the elo. Defaults to 10.", type=int, default=10)
+
     parser.add_argument("-b", "--base-elo",
-                        help="Base elo for calculating stuff. Defaults to 1000.", action='store_const', default=1000)
+                        help="Base elo for calculating stuff. Defaults to 1000.", type=int, default=1000)
+
+    parser.add_argument("--no-save",
+                        help="Don't save the result to the file, only calculate and print result.", action='store_true')
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
-    agent_subparser = subparsers.add_parser("agent",
+    agent_subparser = subparsers.add_parser("agent", add_help=False,
                                             help='Benchmarks the agent against the currently added agents, adding it to the system.')
 
     agent_subparser.add_argument("agent", help="The name of the agent to benchmark.")
 
-    base_subparser = subparsers.add_parser("base",
+    base_subparser = subparsers.add_parser("base", add_help=False,
                                            help="Generates the elos for the base agents.")
 
     base_subparser.add_argument("--recalculate", help="Recalculate the elos only, don't play the games."
                                                       "Useful for changing the k-factor.",
                                 action='store_true')
 
-    stats_subparser = subparsers.add_parser("stats",
+    stats_subparser = subparsers.add_parser("stats", add_help=False,
                                             help="Prints statistics about the current elos of agents.")
 
     arguments = parser.parse_args()
 
     if arguments.mode == 'stats':
-        print_stats()
+        print_stats(json.load(open(STATS_FILE)))
         quit()
 
     # first, determine what games we need to play
     games_to_play = {}
 
+    # for base, it's all pairs
     if arguments.mode == 'base':
         games_to_play = {}
 
@@ -92,8 +95,13 @@ if __name__ == "__main__":
             for j in range(i + 1, len(base_agents)):
                 games_to_play[(base_agents[i], base_agents[j])] = arguments.n
 
+    # for agent, it's games against base and also against all other added agents
     elif arguments.mode == 'agent':
-        # TODO: also add custom agents from reading the json stats file
+        stats = json.load(open(STATS_FILE))
+
+        for other_agent in stats['other']:
+            games_to_play[(arguments.agent, other_agent)] = arguments.n
+
         for i in range(len(base_agents)):
             games_to_play[(arguments.agent, base_agents[i])] = arguments.n
 
@@ -115,8 +123,6 @@ if __name__ == "__main__":
             "base_games": results
         }
     elif arguments.mode == 'agent':
-        stats = json.load(open(STATS_FILE))
-
         if "other" not in stats:
             stats["other"] = {}
 
@@ -142,6 +148,7 @@ if __name__ == "__main__":
         elif arguments.mode == 'agent':
             stats["other"][a1] += difference
 
-    json.dump(stats, open(STATS_FILE, 'w'))
+    if not arguments.no_save:
+        json.dump(stats, open(STATS_FILE, 'w'))
 
-    print_stats()
+    print_stats(stats)
