@@ -21,6 +21,10 @@ SCENARIOS = {
         "CRATE_DENSITY": 0.75, 
         "COIN_COUNT": 50 
     }, 
+    "sparse-crate": {
+        "CRATE_DENSITY": 0.15,
+        "COIN_COUNT": 20
+    },
     # this is the tournament game mode
     "classic": {
         "CRATE_DENSITY": 0.75,
