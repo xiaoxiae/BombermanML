@@ -15,6 +15,14 @@ import torch.optim as optim
 import events as e
 import settings as s
 
+# Binarizing means turning the distance vectors into binary vectors indicating
+# which distance is the shortest (i.e. what we've been doing before). Used for testing
+binarize = False
+
+# Switch between event-based and potential-based rewards.
+# Note: the potential-based rewards use hard-coded values for now!
+use_potential = True
+
 MOVED_TOWARD_COIN = "MOVED_TOWARD_COIN"
 DID_NOT_MOVE_TOWARD_COIN = "DID_NOT_MOVE_TOWARD_COIN"
 MOVED_TOWARD_CRATE = "MOVED_TOWARD_CRATE"
@@ -40,67 +48,38 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
-# Binarizing means turning the distance vectors into binary vectors indicating
-# which distance is the shortest (i.e. what we've been doing before). Used for testing
-binarize = False
-
-# GAME_REWARDS = {
-#     # hunt coins
-#     MOVED_TOWARD_COIN: 10,
-#     DID_NOT_MOVE_TOWARD_COIN: -100,
-#     e.COIN_COLLECTED: 100,
-#     # hunt people
-#     e.KILLED_OPPONENT: 500,
-#     MOVED_TOWARD_PLAYER: 10,
-#     DID_NOT_MOVE_TOWARD_PLAYER: -50,
-#     # blow up crates
-#     MOVED_TOWARD_CRATE: 5,
-#     DID_NOT_MOVE_TOWARD_CRATE: -50,
-#     # basic stuff
-#     e.GOT_KILLED: -1000,
-#     e.KILLED_SELF: -1000,
-#     e.SURVIVED_ROUND: 1000,
-#     e.INVALID_ACTION: -10,
-#     MOVED_TOWARD_SAFETY: 10,
-#     DID_NOT_MOVE_TOWARD_SAFETY: -1000,
-#     # be active!
-#     USELESS_WAIT: -100,
-#     # meaningful bombs
-#     PLACED_USEFUL_BOMB: 50,
-#     PLACED_SUPER_USEFUL_BOMB: 100,
-#     DID_NOT_PLACE_USEFUL_BOMB: -1000,
-#     e.CRATE_DESTROYED: 10,
-#     e.COIN_FOUND: 10,
-# }
-
 GAME_REWARDS = {
     # hunt coins
-    MOVED_TOWARD_COIN: 1,
-    DID_NOT_MOVE_TOWARD_COIN: -10,
-    e.COIN_COLLECTED: 100,
+    MOVED_TOWARD_COIN: 2,
+    DID_NOT_MOVE_TOWARD_COIN: -6,       # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
+    e.COIN_COLLECTED: 100,              # 100 * game reward
     # hunt people
-    e.KILLED_OPPONENT: 500,
+    e.KILLED_OPPONENT: 500,             # 100 * game reward
     MOVED_TOWARD_PLAYER: 1,
-    DID_NOT_MOVE_TOWARD_PLAYER: -10,
+    DID_NOT_MOVE_TOWARD_PLAYER: -3,
     # blow up crates
-    MOVED_TOWARD_CRATE: 1,
-    DID_NOT_MOVE_TOWARD_CRATE: -10,
+    MOVED_TOWARD_CRATE: 3,
+    DID_NOT_MOVE_TOWARD_CRATE: -9,
     # basic stuff
-    e.GOT_KILLED: -500,
-    e.KILLED_SELF: -1000,
-    e.SURVIVED_ROUND: 0,
+    e.GOT_KILLED: -500,                 # as bad as giving someone else a kill reward
+    e.KILLED_SELF: 0,                   # not worse than being killed, so don't punish it (?)
+    e.SURVIVED_ROUND: 0,                # dying is already punished, and standing in a corner until the timer runs out should not be rewarded
     e.INVALID_ACTION: -10,
     MOVED_TOWARD_SAFETY: 5,
-    DID_NOT_MOVE_TOWARD_SAFETY: -10,
+    DID_NOT_MOVE_TOWARD_SAFETY: -15,
     # be active!
-    USELESS_WAIT: -10,
+    USELESS_WAIT: -1,                   # it may be good to wait until an explosion is over, so this shouldn't be penalized too much; must not be higher than INVALID_ACTION
     # meaningful bombs
-    PLACED_USEFUL_BOMB: 5,
-    PLACED_SUPER_USEFUL_BOMB: 10,
-    DID_NOT_PLACE_USEFUL_BOMB: -50,
-    e.CRATE_DESTROYED: 1,
-    e.COIN_FOUND: 1,
+    PLACED_USEFUL_BOMB: 20,
+    PLACED_SUPER_USEFUL_BOMB: 50,
+    DID_NOT_PLACE_USEFUL_BOMB: -20,     # should be way more than what is gained by running away from the bomb
+    e.CRATE_DESTROYED: 0,               # maybe it's bad to reward this because the action that led to this event lies in the past and we're already rewarding good bomb placement
+    e.COIN_FOUND: 0,                    # agent cannot influence this, so don't reward it (?)
 }
+
+# Some values needed for the potential phi that are not recorded in the game state
+bomb_location = None    # location of agent's bomb, if placed
+n_crates_total = None   # number of crates at the start of the round
 
 BATCH_SIZE = 128  # number of transitions sampled from replay buffer
 MEMORY_SIZE = 5000  # number of transitions to keep in the replay buffer. 5000 is enough for around 35 rounds
@@ -111,7 +90,7 @@ EPS_DECAY = 10  # how many steps until full epsilon decay (not quite true; 'EPS_
 TAU = 1e-3  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
-LAYER_SIZES = [1024, 1024]  # sizes of hidden layers
+LAYER_SIZES = [100, 1000, 200, 50]  # sizes of hidden layers
 
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
@@ -403,11 +382,12 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
 
     # distance in each direction plus 'optimal' signal for each thing
     distances_full:dict[str, list[int]] = {name: [0]*5 for name in search_for}
-    # TODO: the default distance is 0. This may not be ideal?
+
+    agent_pos = game_state['self'][-1]
 
     # for all four things, check if the agent is already in the optimal position
     for name, is_optimal in _is_optimal_position(game_state).items():
-        if is_optimal:
+        if is_optimal and search_for[name]:
             distances_full[name][4] = 1 # set 'optimal' signal
     
     # for each neighbor, find closest things via breadth-first search
@@ -418,7 +398,7 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
             continue
 
         queue = deque([(start_game_state, 1)])
-        explored = {start_game_state['self'][-1]}
+        explored = {start_game_state['self'][-1], agent_pos} # not allowed to go through agent's position
         distances = {name: 0 for name, sf in search_for.items() if sf} # distance to closest coin/crate/enemy/safety
         # 'distances' also doubles as the break condition for the while loop. That's why it only has entries that are actually being searched for
 
@@ -431,7 +411,7 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
 
             for name, is_optimal in _is_optimal_position(current_game_state).items():
                 # if any of the four things are found at the current position, mark their distance and stop searching for it
-                if is_optimal and distances.get(name, 0) == 0: # 'distances.get(name, 0) == 0' means the thing is being searched for and has not yet been found
+                if is_optimal and np.isclose(distances.get(name, 1), 0): # 'np.isclose(distances.get(name, 1), 0)' means the thing is being searched for and has not yet been found
                     distances[name] = distance
 
             # explored neighboring positions
@@ -446,6 +426,13 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
         i = ACTIONS.index(starting_action)
         for name, distance in distances.items():
             distances_full[name][i] = distance
+
+    # Standing next to a crate counts as being distance 1 from it, and since we're only detecting whether the agent is next to a crate,
+    # all valid crate distances need to be increased by 1.
+    if search_for[CRATE]:
+        for i, (dx, dy) in enumerate(DELTAS):
+            if game_state['field'][agent_pos[0] + dx, agent_pos[1] + dy] != -1:
+                distances_full[CRATE][i] += 1
 
     return distances_full
 
@@ -474,11 +461,18 @@ def _binarize_features(features:list[int]) -> list[int]:
 @lru_cache(maxsize=10000)
 def _state_to_features(game_state: tuple) -> torch.Tensor:
     """
-    0..4 - distances to closest coins -- u, r, d, l, on top of coin
-    5..9 - distances to closest crate -- u, r, d, l, next to crate
-    10..14 - distances to where placing a bomb will hurt another player -- u, r, d, l, place now
-    15..19 - distances to safety -- u, r, d, l, currently safe
-    20 - can we place a bomb (and live to tell the tale)?
+    0..4 - distances to closest coins -- u, r, d, l, on top of coin\n
+    5..9 - distances to closest crate -- u, r, d, l, next to crate\n
+    10..14 - distances to where placing a bomb will hurt another player -- u, r, d, l, place now\n
+    15..19 - distances to safety -- u, r, d, l, currently safe\n
+    20 - can we place a bomb (and live to tell the tale)?\n
+
+    The features related to coins, crates, enemies, and safety all work exactly the same:
+    The first four entries give the distance to the respective thing in the four directions, where immediately going back is not allowed.
+    If a distance is obstructed, it's given as 0. For this reason, standing next to a crate gives a distance of 1 (to differentiate between walls and crates).
+    The fifth entry states whether the agent is in the optimal spot, i.e. standing on top of a coin (can only happen at the start), standing next to a crate,
+    standing in the blast radius of another player or being safe. Note that distances are given even if the agent is in the optimal spot.
+    Distances are only given if the respective thing is being searched for. E.g. if the agent is not in danger, no safety distances will be given.
     """
     game_state: Game = {
         'field': np.array(game_state[0]),
@@ -524,18 +518,53 @@ def state_to_features(game_state: Game | None) -> torch.Tensor | None:
 
 
 def _is_bomb_useful(game_state) -> bool:
-    """Return True if the bomb is useful, either by destroying a crate or by killing an enemy."""
+    """Return True if the bomb is useful, either by destroying a crate or by threatening an enemy."""
     x, y = game_state['self'][3]
     for bx, by in _get_blast_coords(x, y):
         # destroys crate
         if game_state['field'][bx][by] == 1:
             return True
 
-        # kills a player
+        # might kill a player
         if (bx, by) in [a[-1] for a in game_state['others']]:
             return True
 
     return False
+
+
+def _is_bomb_location_useful(game_state: Game, loc: tuple[int]) -> bool:
+    for bx, by in _get_blast_coords(*loc):
+        if game_state['field'][bx, by] == 1:
+            return True
+    
+    return False
+
+
+def phi(game_state: Game, bomb_location: tuple[int], n_crates) -> float:
+    """Potential for game reward: F(s, a, s') = GAMMA*phi(s') - phi(s). See https://people.eecs.berkeley.edu/~russell/papers/icml99-shaping.pdf"""
+    value = 0.0
+    distances_full = _distances(game_state)
+
+    # evaluate distances to things
+    key = lambda x: x if x != 0 else 1e4
+    importance = {COIN: 1, CRATE: 0.8, ENEMY: 0, SAFETY: 1} # how distances to things should be weighed (arbitrarily chosen for now)
+    for name, distances in distances_full.items():
+        value += importance[name] * (-min(distances[:4], key=key)) # shorter distance is "less bad"
+    
+    # evaluate bomb placement TODO: will not work well when enemies are present
+    if bomb_location is not None:
+        if _is_bomb_location_useful(game_state, bomb_location):
+            value += 10 # bomb will destroy crate
+        else:
+            value -= 5 # bomb will not destroy crate
+
+    # # destroying crates is regarded as a subgoal. It takes roughly t = (COLS-2)*(ROWS-2)/9 + 4 steps to blow up a crate when starting from anywhere
+    # # t = (s.COLS - 2)*(s.ROWS - 2)/9 + 4
+    # n_crates_remaining = np.sum(game_state['field'] == 1)
+    # # value += (n_crates - n_crates_remaining - 0.5) * t / n_crates
+    # value -= n_crates_remaining # fewer remaining crates are less bad
+
+    return value
 
 
 def _reward_from_events(self, events: list[str]) -> torch.Tensor:
@@ -560,11 +589,11 @@ def state_to_string(game_state: Game) -> np.ndarray:
     for c in game_state['coins']:
         field[c] = 3                                # coins are 3
     for b in game_state['bombs']:
-        field[b[0]] = -(b[1]+2)                     # bomb detonation time is -6 - -2
+        field[b[0]] = -(b[1]+2)                     # bomb detonation time is -4 - -2
     field[game_state['self'][-1]] = 2               # player is 2
     field[game_state['explosion_map'] != 0] = -1    # explosions are -1
 
-    return str(field)
+    return str(field.T)
 
 
 def _process_game_event(self, old_game_state: Game, self_action: str,
@@ -637,6 +666,55 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
     self.target_model.load_state_dict(target_net_state_dict)
 
 
+def _process_game_event_potential(self, old_game_state: Game, self_action: str,
+                        new_game_state: Game | None, events: list[str]):
+    """Called after each step when training. Does the training. Uses potential-based auxiliary rewards."""
+    # auxiliary rewards
+    if new_game_state is None: # end of round -> no auxiliary rewards
+        reward = 0
+    else:
+        global bomb_location
+        old_bomb_location = bomb_location
+        if new_game_state['self'][2]: # if the agent can place a bomb, no bomb is currently ticking
+            bomb_location = None
+        if e.BOMB_DROPPED:
+            bomb_location = new_game_state['self'][-1]
+
+        global n_crates_total
+        if n_crates_total is None:
+            n_crates_total = np.sum(old_game_state['field'] == 1)
+
+        reward = GAMMA*phi(new_game_state, bomb_location, n_crates_total) - phi(old_game_state, old_bomb_location, n_crates_total)
+
+    # game rewards
+    for ev in events:
+        if ev == e.COIN_COLLECTED:
+            reward += 100
+        elif ev == e.KILLED_OPPONENT:
+            reward += 500
+        # the next ones aren't game rewards, but it's hard to punish them another way (and they should be punished)
+        # elif ev == e.GOT_KILLED:
+        #     reward -= 500
+        # elif ev == e.INVALID_ACTION:
+        #     reward -= 15
+
+    state = state_to_features(old_game_state)
+    new_state = state_to_features(new_game_state)
+    action = torch.tensor([[ACTIONS.index(self_action)]], device=device, dtype=torch.long)
+
+    self.memory.push(state, action, new_state, torch.tensor([reward], device=device, dtype=torch.float))
+    self.plot_reward_accum += reward
+
+    _optimize_model(self)
+
+    # soft-update the target network
+    target_net_state_dict = self.target_model.state_dict()
+    policy_net_state_dict = self.policy_model.state_dict()
+    for key in policy_net_state_dict:
+        target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (1 - TAU)
+    self.target_model.load_state_dict(target_net_state_dict)
+
+
 def setup_training(self):
     """Sets up training - loads models if they exist + configures plotting (so we see how the model is doing)."""
     if os.path.exists(POLICY_MODEL_PATH):
@@ -675,7 +753,10 @@ def game_events_occurred(self, old_game_state: Game, self_action: str, new_game_
     """Called once per step to allow intermediate rewards based on game events."""
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-    _process_game_event(self, old_game_state, self_action, new_game_state, events)
+    if use_potential:
+        _process_game_event_potential(self, old_game_state, self_action, new_game_state, events)
+    else:
+        _process_game_event(self, old_game_state, self_action, new_game_state, events)
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: list[str]):
@@ -685,7 +766,16 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: list[str
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
-    _process_game_event(self, last_game_state, last_action, None, events)
+    if use_potential:
+        _process_game_event_potential(self, last_game_state, last_action, None, events)
+
+        # reset values for potential-based rewards
+        global bomb_location
+        bomb_location = None
+        global n_crates_total
+        n_crates_total = None
+    else:
+        _process_game_event(self, last_game_state, last_action, None, events)
 
     torch.save(self.policy_model, POLICY_MODEL_PATH)
     torch.save(self.target_model, TARGET_MODEL_PATH)
