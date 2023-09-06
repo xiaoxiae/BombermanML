@@ -91,7 +91,7 @@ EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 ])
 
-MANUAL = True
+MANUAL = False
 
 # paths to the DQN models
 POLICY_MODEL_PATH = f"{cwd}/policy-model.pt"
@@ -710,19 +710,19 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 
 def setup_training(self):
-    """Sets up training - lodas models if they exist + configures plotting (so we see how the model is doing)."""
+    """Sets up training - loads models if they exist + configures plotting (so we see how the model is doing)."""
     self.total_reward = 0
 
+    self.policy_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
+    self.target_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
+
     if os.path.exists(POLICY_MODEL_PATH):
-        self.policy_model = torch.load(POLICY_MODEL_PATH)
-    else:
-        self.policy_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
+        self.policy_model.load_state_dict(torch.load(POLICY_MODEL_PATH))
+        self.policy_model.eval()
 
     if os.path.exists(TARGET_MODEL_PATH):
-        self.target_model = torch.load(TARGET_MODEL_PATH)
-    else:
-        self.target_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
-        self.target_model.load_state_dict(self.policy_model.state_dict())
+        self.target_model.load_state_dict(torch.load(TARGET_MODEL_PATH))
+        self.target_model.eval()
 
     self.model = self.policy_model
 
@@ -785,5 +785,5 @@ def end_of_round(self, last_game_state: Game, last_action: str, events: list[str
     self.fig.canvas.draw()
     self.fig.canvas.flush_events()
 
-    torch.save(self.policy_model, POLICY_MODEL_PATH)
-    torch.save(self.target_model, TARGET_MODEL_PATH)
+    torch.save(self.policy_model.state_dict(), POLICY_MODEL_PATH)
+    torch.save(self.target_model.state_dict(), TARGET_MODEL_PATH)
