@@ -26,7 +26,7 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
 
     agent_directory = Path(f"agent_code/{arguments.agent}")
-    agent_model_directory = agent_directory / "model"
+    agent_model_directory = agent_directory / "models"
 
     # remove the current network (a new one will be trained)
     if not vars(arguments)['continue']:
@@ -43,4 +43,4 @@ if __name__ == "__main__":
         agent_model_directory.mkdir(exist_ok=True)
         for file in agent_directory.iterdir():
             if file.suffix == ".pt":
-                shutil.copy(str(file), (agent_model_directory / file.name).with_suffix(f"_{i}.pt"))
+                shutil.copy(str(file), (agent_model_directory / file.name).with_suffix(f".pt.1"))
