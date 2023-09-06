@@ -21,6 +21,7 @@ MOVED_TOWARD_CRATE = "MOVED_TOWARD_CRATE"
 DID_NOT_MOVE_TOWARD_CRATE = "DID_NOT_MOVE_TOWARD_CRATE"
 MOVED_TOWARD_SAFETY = "MOVED_TOWARD_SAFETY"
 DID_NOT_MOVE_TOWARD_SAFETY = "DID_NOT_MOVE_TOWARD_SAFETY"
+MOVED_IN_DANGER = "MOVED_IN_DANGER"
 PLACED_USEFUL_BOMB = "PLACED_USEFUL_BOMB"
 PLACED_SUPER_USEFUL_BOMB = "PLACED_SUPER_USEFUL_BOMB"
 DID_NOT_PLACE_USEFUL_BOMB = "DID_NOT_PLACE_USEFUL_BOMB"
@@ -39,29 +40,24 @@ GAME_REWARDS = {
     # hunt coins
     MOVED_TOWARD_COIN: 50,
     DID_NOT_MOVE_TOWARD_COIN: -100,
-    #e.COIN_COLLECTED: 100,
+
     # hunt people
-    #e.KILLED_OPPONENT: 500,
     MOVED_TOWARD_PLAYER: 10,
-    #DID_NOT_MOVE_TOWARD_PLAYER: -10,
+
     # blow up crates
     MOVED_TOWARD_CRATE: 20,
-    #DID_NOT_MOVE_TOWARD_CRATE: -10,
+
     # basic stuff
-    # e.GOT_KILLED: -1000,
-    # e.KILLED_SELF: -1000,
-    # e.SURVIVED_ROUND: 1000,
     e.INVALID_ACTION: -100,
-    #MOVED_TOWARD_SAFETY: 100,
     DID_NOT_MOVE_TOWARD_SAFETY: -500,
+
     # be active!
     USELESS_WAIT: -100,
+
     # meaningful bombs
     PLACED_USEFUL_BOMB: 50,
     PLACED_SUPER_USEFUL_BOMB: 150,
     DID_NOT_PLACE_USEFUL_BOMB: -500,
-    #e.CRATE_DESTROYED: 10,
-    #e.COIN_FOUND: 10,
 }
 
 BATCH_SIZE = 256  # number of transitions sampled from replay buffer
@@ -95,7 +91,7 @@ EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 ])
 
-MANUAL = False
+MANUAL = True
 
 # paths to the DQN models
 POLICY_MODEL_PATH = f"{cwd}/policy-model.pt"
@@ -485,8 +481,15 @@ def _is_in_danger(game_state) -> bool:
     return False
 
 
+def player_to_closest_bomb_distance(game_state) -> int:
+    """Return the distance from the player to the closest bomb."""
+    ...
+
+
 def _directions_to_safety(game_state) -> list[int]:
-    """Return the directions to safety, if the player is currently in danger of dying."""
+    """Return the directions to safety, if the player is currently in danger of dying.
+    If there are NO directions to safety, return the direction to the state that was furthest away from the bomb."""
+
     if not _is_in_danger(game_state):
         return []
 
@@ -494,12 +497,25 @@ def _directions_to_safety(game_state) -> list[int]:
 
     valid_actions = set()
 
+    # furthest_actions_distance = 0
+    # furthest_actions = set()
+
     while len(queue) != 0:
         current_game_state, action_history = queue.popleft()
 
         if not _is_in_danger(current_game_state):
             valid_actions.add(action_history[0])
             continue
+
+        # distance_from_closest_bomb = np.array(game_state['self'][3]) - np.array(game_state['self'][3])
+
+        # if len(action_history) >= 1:
+        #    if furthest_actions_distance < np.sum():
+        #        furthest_actions_distance = len(action_history)
+        #        furthest_actions = set()
+
+        #    if furthest_actions_distance == len(action_history):
+        #        furthest_actions.add(action_history[0])
 
         for action in ACTIONS[:5]:
             new_game_state = _next_game_state(current_game_state, action)
@@ -509,6 +525,7 @@ def _directions_to_safety(game_state) -> list[int]:
 
             queue.append((new_game_state, list(action_history) + [action]))
 
+    # return [ACTIONS.index(action) for action in (valid_actions or furthest_actions)]
     return [ACTIONS.index(action) for action in valid_actions]
 
 
@@ -723,8 +740,7 @@ def setup_training(self):
     ax = plt.axes()
 
     self.plot_score, = ax.plot(self.x, self.y_score, '-', color='blue', label='game score')
-    self.plot_reward, = ax.plot(self.x, self.y_reward, '-', color='red', label='reward/100', linestyle='dashed',
-                                linewidth=1)
+    self.plot_reward, = ax.plot(self.x, self.y_reward, color='red', label='reward/100', linestyle='dashed', linewidth=1)
     self.plot_steps, = ax.plot(self.x, self.y_steps, '-', color='green', label='steps/40')
     ax.legend(loc='lower left')
 
