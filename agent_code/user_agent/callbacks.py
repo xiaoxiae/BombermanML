@@ -7,15 +7,13 @@ cwd = os.path.abspath(os.path.dirname(__file__))
 
 
 def setup(self):
-    self.manual = False
-
-    if not self.train and not self.manual:
-        self.model = torch.load(POLICY_MODEL_PATH)
+    if not self.train and not MANUAL:
+        self.model = torch.load(TARGET_MODEL_PATH)
 
 
 def act(self, game_state: Game) -> str:
     """Perform the most probable action when in practice, otherwise use epsilon-decay for better training."""
-    if self.manual:
+    if MANUAL:
         state = state_to_features(game_state)
         print(r"  /       coin        \    /       crate       \    /      player       \    /       safety      \ ")
         print(r" /u    r    d    l    w\  /u    r    d    l    w\  /u    r    d    l    b\  /u    r    d    l    w\  /b\ ")
@@ -23,9 +21,7 @@ def act(self, game_state: Game) -> str:
         return game_state['user_input']
 
     if self.train:
-        steps = game_state["step"]
-
-        threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * steps / EPS_DECAY)
+        threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * game_state["step"] / EPS_DECAY)
 
         if random.random() <= threshold:
             action = choice(ACTIONS)

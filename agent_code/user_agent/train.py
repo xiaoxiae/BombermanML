@@ -37,39 +37,39 @@ DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 GAME_REWARDS = {
     # hunt coins
-    MOVED_TOWARD_COIN: 10,
+    MOVED_TOWARD_COIN: 50,
     DID_NOT_MOVE_TOWARD_COIN: -100,
-    e.COIN_COLLECTED: 100,
+    #e.COIN_COLLECTED: 100,
     # hunt people
-    e.KILLED_OPPONENT: 500,
+    #e.KILLED_OPPONENT: 500,
     MOVED_TOWARD_PLAYER: 10,
-    DID_NOT_MOVE_TOWARD_PLAYER: -10,
+    #DID_NOT_MOVE_TOWARD_PLAYER: -10,
     # blow up crates
-    MOVED_TOWARD_CRATE: 5,
-    DID_NOT_MOVE_TOWARD_CRATE: -5,
+    MOVED_TOWARD_CRATE: 20,
+    #DID_NOT_MOVE_TOWARD_CRATE: -10,
     # basic stuff
-    e.GOT_KILLED: -1000,
-    e.KILLED_SELF: -1000,
-    e.SURVIVED_ROUND: 1000,
-    e.INVALID_ACTION: -10,
-    MOVED_TOWARD_SAFETY: 100,
-    DID_NOT_MOVE_TOWARD_SAFETY: -1000,
+    # e.GOT_KILLED: -1000,
+    # e.KILLED_SELF: -1000,
+    # e.SURVIVED_ROUND: 1000,
+    e.INVALID_ACTION: -100,
+    #MOVED_TOWARD_SAFETY: 100,
+    DID_NOT_MOVE_TOWARD_SAFETY: -500,
     # be active!
     USELESS_WAIT: -100,
     # meaningful bombs
     PLACED_USEFUL_BOMB: 50,
     PLACED_SUPER_USEFUL_BOMB: 150,
-    DID_NOT_PLACE_USEFUL_BOMB: -1000,
-    e.CRATE_DESTROYED: 10,
-    e.COIN_FOUND: 10,
+    DID_NOT_PLACE_USEFUL_BOMB: -500,
+    #e.CRATE_DESTROYED: 10,
+    #e.COIN_FOUND: 10,
 }
 
-BATCH_SIZE = 128  # number of transitions sampled from replay buffer
-MEMORY_SIZE = 5000  # number of transitions to keep in the replay buffer
+BATCH_SIZE = 256  # number of transitions sampled from replay buffer
+MEMORY_SIZE = 1000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
-EPS_START = 0.1  # starting value of epsilon (for taking random actions)
+EPS_START = 0.10  # starting value of epsilon (for taking random actions)
 EPS_END = 0.05  # ending value of epsilon
-EPS_DECAY = 10  # how many steps until full epsilon decay
+EPS_DECAY = 10  # how many rounds until full decay
 TAU = 1e-3  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
@@ -95,6 +95,8 @@ EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 ])
 
+MANUAL = False
+
 # paths to the DQN models
 POLICY_MODEL_PATH = f"{cwd}/policy-model.pt"
 TARGET_MODEL_PATH = f"{cwd}/target-model.pt"
@@ -112,10 +114,9 @@ class Game(TypedDict):
     coins: list[tuple[int, int]]
     self: tuple[str, int, bool, tuple[int, int]]
     others: list[tuple[str, int, bool, tuple[int, int]]]
-    # these aren't really important, so we don't expect them to be there
-    # round: int
-    # step: int
-    # user_input: str | None
+    round: int
+    step: int
+    user_input: str | None
 
 
 class ReplayMemory(object):
@@ -612,7 +613,7 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
 
     self.logger.debug(f"Awarded {reward_sum} for events {', '.join(events)}")
 
-    if self.manual:
+    if MANUAL:
         print(f"Awarded {reward_sum} for events {', '.join(events)}")
 
     return torch.tensor([reward_sum], device=device, dtype=torch.float)
@@ -621,7 +622,6 @@ def _reward_from_events(self, events: list[str]) -> torch.Tensor:
 def _process_game_event(self, old_game_state: Game, self_action: str,
                         new_game_state: Game | None, events: list[str]):
     """Called after each step when training. Does the training."""
-
     state = state_to_features(old_game_state)
     new_state = state_to_features(new_game_state)
     action = torch.tensor([[ACTIONS.index(self_action)]], device=device, dtype=torch.long)
@@ -678,6 +678,8 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     reward = _reward_from_events(self, events)
 
+    self.total_reward += reward
+
     self.memory.push(state, action, new_state, reward)
 
     _optimize_model(self)
@@ -692,6 +694,8 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 def setup_training(self):
     """Sets up training - lodas models if they exist + configures plotting (so we see how the model is doing)."""
+    self.total_reward = 0
+
     if os.path.exists(POLICY_MODEL_PATH):
         self.policy_model = torch.load(POLICY_MODEL_PATH)
     else:
@@ -711,10 +715,18 @@ def setup_training(self):
     # TODO: add another plot for event rewards to see if it coorelates with the score (it SHOULD)
 
     self.x = [0]
-    self.y = [0]
+    self.y_score = [0]
+    self.y_reward = [0]
+    self.y_steps = [0]
 
     self.fig = plt.figure(figsize=(6, 3))
-    self.plot, = plt.plot([], [], '-')
+    ax = plt.axes()
+
+    self.plot_score, = ax.plot(self.x, self.y_score, '-', color='blue', label='game score')
+    self.plot_reward, = ax.plot(self.x, self.y_reward, '-', color='red', label='reward/100', linestyle='dashed',
+                                linewidth=1)
+    self.plot_steps, = ax.plot(self.x, self.y_steps, '-', color='green', label='steps/40')
+    ax.legend(loc='lower left')
 
     plt.show(block=False)
 
@@ -726,27 +738,36 @@ def game_events_occurred(self, old_game_state: Game, self_action: str, new_game_
     _process_game_event(self, old_game_state, self_action, new_game_state, events)
 
 
-def end_of_round(self, last_game_state: dict, last_action: str, events: list[str]):
+def end_of_round(self, last_game_state: Game, last_action: str, events: list[str]):
     """
     Called at the end of each game or when the agent died to hand out final rewards.
     This replaces game_events_occurred in this round.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
+    _process_game_event(self, last_game_state, last_action, None, events)
+
     if len(self.x) > 100:
         self.x.pop(0)
-        self.y.pop(0)
+        self.y_score.pop(0)
+        self.y_reward.pop(0)
+        self.y_steps.pop(0)
 
     self.x.append(self.x[-1] + 1)
-    self.y.append(last_game_state['self'][1])
+    self.y_score.append(last_game_state['self'][1])
+    self.y_reward.append(self.total_reward.cpu().item() / 1000)
+    self.y_steps.append(last_game_state['step'] / 40)
 
-    self.plot.set_data(self.x, self.y)
+    self.plot_score.set_data(self.x, self.y_score)
+    self.plot_reward.set_data(self.x, self.y_reward)
+    self.plot_steps.set_data(self.x, self.y_steps)
+
+    self.total_reward = 0
+
     self.fig.gca().relim()
     self.fig.gca().autoscale_view()
     self.fig.canvas.draw()
     self.fig.canvas.flush_events()
-
-    _process_game_event(self, last_game_state, last_action, None, events)
 
     torch.save(self.policy_model, POLICY_MODEL_PATH)
     torch.save(self.target_model, TARGET_MODEL_PATH)
