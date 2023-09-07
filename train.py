@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 
 # the lists are tuple (training command, calculate the agent elo)
+# if None is specified, it's the name of the agent
 TASKS = {
     "1": [
         (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
@@ -14,6 +15,7 @@ TASKS = {
         (["rule_based_agent", "--scenario", "empty", "--n-rounds", "1000"], False),
         (["--scenario", "classic", "--n-rounds", "1000"], False),
         (["rule_based_agent", "--scenario", "classic", "--n-rounds", "1000"], True),
+        ([None, "--scenario", "classic", "--n-rounds", "1000"], True),
     ]
 }
 
@@ -25,6 +27,7 @@ if __name__ == "__main__":
                         default='complete')
     parser.add_argument("--continue", help="Continue training (instead of removing the network).", action="store_true")
     parser.add_argument("--infinite", help="Train indefinitely, repeating the last command.", action="store_true")
+    parser.add_argument("--cycle", help="Train indefinitely, cycling the commands.", action="store_true")
 
     arguments = parser.parse_args()
 
@@ -41,8 +44,15 @@ if __name__ == "__main__":
     if arguments.infinite:
         TASKS[arguments.task] += [TASKS[arguments.task][-1]] * 10000
 
+    elif arguments.cycle:
+        for _ in range(10):
+            TASKS[arguments.task] += TASKS[arguments.task]
+
     # run the training commands
     for i, (command, calculate_elo) in enumerate(TASKS[arguments.task]):
+        # Nones are the names of the agents
+        command = [c or arguments.agent for c in command]
+
         result_command = ["python", "main.py", "play", "--train", "1", "--no-gui", "--agents",
                           arguments.agent] + command
 
