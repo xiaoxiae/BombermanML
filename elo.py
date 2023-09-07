@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from random import shuffle
 
 base_agents = [
@@ -81,8 +82,12 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
 
     if arguments.mode == 'stats':
+        if not os.path.exists(STATS_FILE):
+            print("No stats file calculated, run `python elo.py base` first!")
+            sys.exit(1)
+
         print_stats(json.load(open(STATS_FILE)))
-        quit()
+        sys.exit(0)
 
     # first, determine what games we need to play
     games_to_play = {}
@@ -97,6 +102,10 @@ if __name__ == "__main__":
 
     # for agent, it's games against base and also against all other added agents
     elif arguments.mode == 'agent':
+        if not os.path.exists(STATS_FILE):
+            print("No stats file calculated, run `python elo.py base` first!")
+            sys.exit(1)
+
         stats = json.load(open(STATS_FILE))
 
         for other_agent in stats['other']:
