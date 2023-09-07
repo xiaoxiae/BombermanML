@@ -25,7 +25,7 @@ def play_games(games_to_play: dict):
         print(f"Playing {games} games between {a1} and {a2}...")
 
         subprocess.Popen(
-            ["python3", "main.py", "play", "--agents", a1, a2, "--n-rounds", str(games), "--no-gui"],
+            ["python", "main.py", "play", "--agents", a1, a2, "--n-rounds", str(games), "--no-gui"],
             stdout=subprocess.DEVNULL,
         ).communicate()
 
