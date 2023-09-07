@@ -12,8 +12,8 @@ TASKS = {
     "complete": [
         (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
         (["rule_based_agent", "--scenario", "empty", "--n-rounds", "1000"], False),
-        (["--scenario classic", "--n-rounds", "1000"], False),
-        (["rule_based_agent", "--scenario classic", "--n-rounds", "1000"], True),
+        (["--scenario", "classic", "--n-rounds", "1000"], False),
+        (["rule_based_agent", "--scenario", "classic", "--n-rounds", "1000"], True),
     ]
 }
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
             print("Calculating the agent's elo against the others.")
 
             result = subprocess.Popen(
-                ["python", "elo.py", "-n", "1", "--no-save", "agent", arguments.agent],
+                ["python", "elo.py", "-n", "100", "--no-save", "agent", arguments.agent],
                 stdout=subprocess.PIPE,
             ).communicate()
 
