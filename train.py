@@ -26,8 +26,7 @@ if __name__ == "__main__":
     parser.add_argument("--task", help="The task to train. Defaults to 'complete', which trains for all tasks.",
                         default='complete')
     parser.add_argument("--continue", help="Continue training (instead of removing the network).", action="store_true")
-    parser.add_argument("--infinite", help="Train indefinitely, repeating the last command.", action="store_true")
-    parser.add_argument("--cycle", help="Train indefinitely, cycling the commands.", action="store_true")
+    parser.add_argument("--infinite", help="Train indefinitely, repeating the last n commands.", type=int)
 
     arguments = parser.parse_args()
 
@@ -42,11 +41,7 @@ if __name__ == "__main__":
 
     # yeah, I know, I'm going to hell
     if arguments.infinite:
-        TASKS[arguments.task] += [TASKS[arguments.task][-1]] * 10000
-
-    elif arguments.cycle:
-        for _ in range(10):
-            TASKS[arguments.task] += TASKS[arguments.task]
+        TASKS[arguments.task] += TASKS[arguments.task][-arguments.infinite:] * 10000
 
     # run the training commands
     for i, (command, calculate_elo) in enumerate(TASKS[arguments.task]):
