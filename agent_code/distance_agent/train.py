@@ -302,7 +302,7 @@ def _next_game_state(game_state: Game, action: str) -> Game | None:
     # 4. self.update_bombs()
     game_state['field'] = np.array(game_state['field'])
 
-    for i in range(len(game_state['bombs'])):
+    for i in reversed(range(len(game_state['bombs']))):
         ((x, y), t) = game_state['bombs'][i]
         t -= 1
 
