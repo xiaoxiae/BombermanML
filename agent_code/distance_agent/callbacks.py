@@ -23,8 +23,8 @@ def act(self, game_state: Game) -> str:
         return game_state['user_input']
 
     if self.train:
-        # steps = game_state["step"]
-        round = game_state['round'] # randomness decay should probably depend on episode number rather than step number 
+        self.logger.debug("\n=========")
+        round = game_state['round']
 
         threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * round / EPS_DECAY)
         if game_state['step'] == 1: self.logger.debug(f"Randomness level at {threshold*100:.2f}%")

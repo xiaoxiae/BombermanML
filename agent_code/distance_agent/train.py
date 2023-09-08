@@ -21,7 +21,7 @@ binarize = False
 
 # Switch between event-based and potential-based rewards.
 # Note: the potential-based rewards use hard-coded values for now!
-use_potential = True
+use_potential = False
 
 MOVED_TOWARD_COIN = "MOVED_TOWARD_COIN"
 DID_NOT_MOVE_TOWARD_COIN = "DID_NOT_MOVE_TOWARD_COIN"
@@ -50,21 +50,21 @@ DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 GAME_REWARDS = {
     # hunt coins
-    MOVED_TOWARD_COIN: 2,
-    DID_NOT_MOVE_TOWARD_COIN: -6,       # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
+    MOVED_TOWARD_COIN: 5,
+    DID_NOT_MOVE_TOWARD_COIN: -10,     # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
     e.COIN_COLLECTED: 100,              # 100 * game reward
     # hunt people
-    e.KILLED_OPPONENT: 500,             # 100 * game reward
-    MOVED_TOWARD_PLAYER: 1,
-    DID_NOT_MOVE_TOWARD_PLAYER: -3,
+    # e.KILLED_OPPONENT: 500,             # 100 * game reward # good action lies in the past
+    MOVED_TOWARD_PLAYER: 2,
+    # DID_NOT_MOVE_TOWARD_PLAYER: -10,
     # blow up crates
-    MOVED_TOWARD_CRATE: 3,
-    DID_NOT_MOVE_TOWARD_CRATE: -9,
+    MOVED_TOWARD_CRATE: 5,
+    DID_NOT_MOVE_TOWARD_CRATE: -10,
     # basic stuff
     e.GOT_KILLED: -500,                 # as bad as giving someone else a kill reward
     e.KILLED_SELF: 0,                   # not worse than being killed, so don't punish it (?)
     e.SURVIVED_ROUND: 0,                # dying is already punished, and standing in a corner until the timer runs out should not be rewarded
-    e.INVALID_ACTION: -10,
+    e.INVALID_ACTION: -50,
     MOVED_TOWARD_SAFETY: 5,
     DID_NOT_MOVE_TOWARD_SAFETY: -15,
     # be active!
@@ -72,7 +72,7 @@ GAME_REWARDS = {
     # meaningful bombs
     PLACED_USEFUL_BOMB: 20,
     PLACED_SUPER_USEFUL_BOMB: 50,
-    DID_NOT_PLACE_USEFUL_BOMB: -20,     # should be way more than what is gained by running away from the bomb
+    DID_NOT_PLACE_USEFUL_BOMB: -50,     # should be way more than what is gained by running away from the bomb
     e.CRATE_DESTROYED: 0,               # maybe it's bad to reward this because the action that led to this event lies in the past and we're already rewarding good bomb placement
     e.COIN_FOUND: 0,                    # agent cannot influence this, so don't reward it (?)
 }
@@ -81,16 +81,16 @@ GAME_REWARDS = {
 bomb_location = None    # location of agent's bomb, if placed
 n_crates_total = None   # number of crates at the start of the round
 
-BATCH_SIZE = 128  # number of transitions sampled from replay buffer
-MEMORY_SIZE = 5000  # number of transitions to keep in the replay buffer. 5000 is enough for around 35 rounds
+BATCH_SIZE = 256  # number of transitions sampled from replay buffer
+MEMORY_SIZE = 2000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
 EPS_START = 0.1  # starting value of epsilon (for taking random actions)
-EPS_END = 0.05  # ending value of epsilon
-EPS_DECAY = 10  # how many steps until full epsilon decay (not quite true; 'EPS_END' is only attained at infinity)
+EPS_END = 0.01  # ending value of epsilon
+EPS_DECAY = 50  # how many steps until full epsilon decay (not quite true; 'EPS_END' is only attained at infinity)
 TAU = 1e-3  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
-LAYER_SIZES = [100, 1000, 200, 50]  # sizes of hidden layers
+LAYER_SIZES = [500, 1500, 1200, 300]  # sizes of hidden layers
 
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
@@ -380,7 +380,7 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
         # make sure the supplied 'search_for' dictionary has the four required entries
         assert all(name in search_for for name in (COIN, CRATE, ENEMY, SAFETY)), 'Supplied "search_for" dictionary does not have the four required entries!'
 
-    # distance in each direction plus 'optimal' signal for each thing
+    # distance in each direction plus 'optimal' signal for each thing. Default distance is 0
     distances_full:dict[str, list[int]] = {name: [0]*5 for name in search_for}
 
     agent_pos = game_state['self'][-1]
@@ -393,14 +393,19 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
     # for each neighbor, find closest things via breadth-first search
     for starting_action in ACTIONS[:4]:
         start_game_state = _next_game_state(game_state, starting_action)
+        distances = {name: 0 for name, sf in search_for.items() if sf} # distance to closest coin/crate/enemy/safety
+        # 'distances' also doubles as the break condition for the while loop. That's why it only has entries that are actually being searched for
 
         if start_game_state is None: # direction is obstructed or leads to immediate death
+            # If it's obstructed by a crate, the distance must be recorded as 1
+            # TODO: This is a hack, just rewrite all of this with crates in mind from the start
+            dx, dy = DELTAS[ACTIONS.index(starting_action)] # figure out position offset
+            if game_state['field'][agent_pos[0] + dx, agent_pos[1] + dy] == 1:
+                distances[CRATE] = 1
             continue
 
         queue = deque([(start_game_state, 1)])
         explored = {start_game_state['self'][-1], agent_pos} # not allowed to go through agent's position
-        distances = {name: 0 for name, sf in search_for.items() if sf} # distance to closest coin/crate/enemy/safety
-        # 'distances' also doubles as the break condition for the while loop. That's why it only has entries that are actually being searched for
 
         while len(queue) > 0:
             current_game_state, distance = queue.popleft()
@@ -412,7 +417,7 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
             for name, is_optimal in _is_optimal_position(current_game_state).items():
                 # if any of the four things are found at the current position, mark their distance and stop searching for it
                 if is_optimal and np.isclose(distances.get(name, 1), 0): # 'np.isclose(distances.get(name, 1), 0)' means the thing is being searched for and has not yet been found
-                    distances[name] = distance
+                    distances[name] = distance + int(name == CRATE) # if a crate is found, its distance must be increased by 1
 
             # explored neighboring positions
             for action in ACTIONS[:4]:
@@ -426,13 +431,6 @@ def _distances(game_state: Game, search_for: dict[str, bool] | None = None) -> d
         i = ACTIONS.index(starting_action)
         for name, distance in distances.items():
             distances_full[name][i] = distance
-
-    # Standing next to a crate counts as being distance 1 from it, and since we're only detecting whether the agent is next to a crate,
-    # all valid crate distances need to be increased by 1.
-    if search_for[CRATE]:
-        for i, (dx, dy) in enumerate(DELTAS):
-            if game_state['field'][agent_pos[0] + dx, agent_pos[1] + dy] != -1:
-                distances_full[CRATE][i] += 1
 
     return distances_full
 
@@ -455,7 +453,8 @@ def _binarize_features(features:list[int]) -> list[int]:
         d_min = min(features[x:y], key=key)
         d_max = max(features[x:y], key=key)
         # if all directions are equally good, set them all to 0, otherwise set the best ones to 1
-        features[x:y] = [0]*4 if d_min == d_max else [int(d == d_min) for d in features[x:y]]
+        nullify = d_min == d_max or features[x+4] == 1
+        features[x:y] = [0]*4 if nullify else [int(d == d_min) for d in features[x:y]]
 
 
 @lru_cache(maxsize=10000)
