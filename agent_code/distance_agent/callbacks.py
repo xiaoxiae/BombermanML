@@ -10,7 +10,9 @@ def setup(self):
     self.manual = False
 
     if not self.train and not self.manual:
-        self.model = torch.load(POLICY_MODEL_PATH)
+        self.model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
+        self.model.load_state_dict(torch.load(TARGET_MODEL_PATH))
+        self.model.eval()
 
 
 def act(self, game_state: Game) -> str:
