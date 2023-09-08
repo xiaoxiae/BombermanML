@@ -115,6 +115,9 @@ if __name__ == "__main__":
         stats = json.load(open(STATS_FILE))
 
         for other_agent in stats.get('other', ()):
+            if other_agent == arguments.agent:
+                continue
+
             games_to_play[(arguments.agent, other_agent)] = arguments.n
 
         for i in range(len(base_agents)):
