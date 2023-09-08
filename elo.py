@@ -78,6 +78,12 @@ if __name__ == "__main__":
 
     stats_subparser = subparsers.add_parser("stats", add_help=False,
                                             help="Prints statistics about the current elos of agents.")
+    
+    duel_subparser = subparsers.add_parser("duel", help="Plays a match between two agents.")
+
+    duel_subparser.add_argument("agent1", help="First duelist")
+
+    duel_subparser.add_argument("agent2", help="Second duelist")
 
     arguments = parser.parse_args()
 
@@ -113,9 +119,13 @@ if __name__ == "__main__":
 
         for i in range(len(base_agents)):
             games_to_play[(arguments.agent, base_agents[i])] = arguments.n
+    
+    # for duel, it's just games against each other
+    elif arguments.mode == 'duel':
+        games_to_play[(arguments.agent1, arguments.agent2)] = arguments.n
 
     # then actually play them (or just recalculate if --recalculate is specified)
-    if arguments.mode == 'agent' or (arguments.mode == 'base' and not arguments.recalculate):
+    if arguments.mode == 'agent' or arguments.mode == 'duel' or (arguments.mode == 'base' and not arguments.recalculate):
         play_games(games_to_play)
         results = load_results()
 
@@ -124,6 +134,16 @@ if __name__ == "__main__":
         shuffle(results)
     else:
         results = json.load(open(STATS_FILE))["base_games"]
+
+    # in duel mode, just print out the result and save nothing
+    if arguments.mode == 'duel':
+        points = {arguments.agent1: 0, 'equal': 0, arguments.agent2: 0}
+        for a1, result, a2 in results:
+            res = {'>': a1, '=': 'equal', '<': a2}
+            points[res[result]] += 1
+        
+        print(' | '.join(name + ': ' + str(score) for name, score in points.items()))
+        quit()
 
     # then we create the stats dictionary for base, or load it for agent
     if arguments.mode == 'base':
