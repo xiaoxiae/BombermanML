@@ -14,8 +14,9 @@ TASKS = {
         (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
         (["rule_based_agent", "--scenario", "empty", "--n-rounds", "1000"], False),
         (["--scenario", "classic", "--n-rounds", "1000"], False),
-        (["rule_based_agent", "--scenario", "classic", "--n-rounds", "1000"], True),
-        ([None, "--scenario", "classic", "--n-rounds", "1000"], True),
+        (["rule_based_agent", "--scenario", "classic", "--n-rounds", "200"], True),
+        (["binary_agent_v3", "--scenario", "classic", "--n-rounds", "200"], True),
+        ([None, "--scenario", "classic", "--n-rounds", "200"], True),
     ]
 }
 
