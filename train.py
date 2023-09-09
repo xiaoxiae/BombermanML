@@ -17,7 +17,10 @@ TASKS = {
         (["rule_based_agent", "--scenario", "classic", "--n-rounds", "200"], True),
         (["binary_agent_v3", "--scenario", "classic", "--n-rounds", "200"], True),
         ([None, "--scenario", "classic", "--n-rounds", "200"], True),
-    ]
+    ],
+    "self": [
+        ([None, "--scenario", "classic", "--n-rounds", "100"], True),
+    ],
 }
 
 if __name__ == "__main__":
