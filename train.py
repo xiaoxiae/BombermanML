@@ -58,8 +58,10 @@ if __name__ == "__main__":
         print(f"Saving current network state")
         agent_model_directory.mkdir(exist_ok=True)
         for file in agent_directory.iterdir():
-            if file.suffix == ".pt":
-                shutil.copy(str(file), (agent_model_directory / file.name).with_suffix(f".pt.{i}"))
+            # save .pt (networks) and .txt (other data)
+            for suffix in [".pt", ".txt"]:
+                if file.suffix == suffix:
+                    shutil.copy(str(file), (agent_model_directory / file.name).with_suffix(f"{suffix}.{i}"))
 
         if calculate_elo:
             print("Calculating the agent's elo against the others.")

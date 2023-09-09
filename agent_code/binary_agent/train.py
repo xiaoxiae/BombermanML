@@ -92,10 +92,12 @@ EMPTY_FIELD = np.array([
 ])
 
 MANUAL = False
+PLOT = False
 
 # paths to the DQN models
 POLICY_MODEL_PATH = f"{cwd}/policy-model.pt"
 TARGET_MODEL_PATH = f"{cwd}/target-model.pt"
+PLOT_PATH = f"{cwd}/plot.txt"
 
 FEATURE_VECTOR_SIZE = 21  # how many features our model has; ugly but hard to not hardcode
 
@@ -729,22 +731,22 @@ def setup_training(self):
     self.optimizer = OPTIMIZER(self.policy_model.parameters(), lr=LR)
     self.memory = ReplayMemory(MEMORY_SIZE)
 
-    # TODO: add another plot for event rewards to see if it coorelates with the score (it SHOULD)
-
     self.x = [0]
     self.y_score = [0]
     self.y_reward = [0]
     self.y_steps = [0]
 
-    self.fig = plt.figure(figsize=(6, 3))
-    ax = plt.axes()
+    if PLOT:
+        self.fig = plt.figure(figsize=(6, 3))
+        ax = plt.axes()
 
-    self.plot_score, = ax.plot(self.x, self.y_score, '-', color='blue', label='game score')
-    self.plot_reward, = ax.plot(self.x, self.y_reward, color='red', label='reward/100', linestyle='dashed', linewidth=1)
-    self.plot_steps, = ax.plot(self.x, self.y_steps, '-', color='green', label='steps/40')
-    ax.legend(loc='lower left')
+        self.plot_score, = ax.plot(self.x, self.y_score, '-', color='blue', label='game score')
+        self.plot_reward, = ax.plot(self.x, self.y_reward, color='red', label='reward/100', linestyle='dashed',
+                                    linewidth=1)
+        self.plot_steps, = ax.plot(self.x, self.y_steps, '-', color='green', label='steps/40')
+        ax.legend(loc='lower left')
 
-    plt.show(block=False)
+        plt.show(block=False)
 
 
 def game_events_occurred(self, old_game_state: Game, self_action: str, new_game_state: Game, events: list[str]):
@@ -763,27 +765,26 @@ def end_of_round(self, last_game_state: Game, last_action: str, events: list[str
 
     _process_game_event(self, last_game_state, last_action, None, events)
 
-    if len(self.x) > 100:
-        self.x.pop(0)
-        self.y_score.pop(0)
-        self.y_reward.pop(0)
-        self.y_steps.pop(0)
-
     self.x.append(self.x[-1] + 1)
     self.y_score.append(last_game_state['self'][1])
-    self.y_reward.append(self.total_reward.cpu().item() / 1000)
-    self.y_steps.append(last_game_state['step'] / 40)
-
-    self.plot_score.set_data(self.x, self.y_score)
-    self.plot_reward.set_data(self.x, self.y_reward)
-    self.plot_steps.set_data(self.x, self.y_steps)
+    self.y_reward.append(self.total_reward.cpu().item())
+    self.y_steps.append(last_game_state['step'])
 
     self.total_reward = 0
 
-    self.fig.gca().relim()
-    self.fig.gca().autoscale_view()
-    self.fig.canvas.draw()
-    self.fig.canvas.flush_events()
+    if PLOT:
+        self.plot_score.set_data(self.x[-100:], self.y_score[-100:])
+        self.plot_reward.set_data(self.x[-100:], np.array(self.y_reward[-100:]) / 1000)
+        self.plot_steps.set_data(self.x[-100:], np.array(self.y_steps[-100:] / 40))
+
+        self.fig.gca().relim()
+        self.fig.gca().autoscale_view()
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+    with open(PLOT_PATH, "w") as f:
+        for array in [self.x, self.y_score, self.y_reward, self.y_steps]:
+            f.write(" ".join(list(map(str, array))) + "\n")
 
     torch.save(self.policy_model.state_dict(), POLICY_MODEL_PATH)
     torch.save(self.target_model.state_dict(), TARGET_MODEL_PATH)
