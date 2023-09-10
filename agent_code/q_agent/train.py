@@ -1,19 +1,26 @@
 from collections import namedtuple, deque
 from functools import lru_cache, cache
 
+import os
 import copy
 import pickle
-from typing import List
+#from typing import List
 from typing import TypedDict
-from random import shuffle
+#from random import shuffle
 import random
 from tqdm import trange
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 import events as e
 import settings as s
-#from .callbacks import state_to_features
+
+
+cwd = os.path.abspath(os.path.dirname(__file__))
+
+# paths to the QTable models
+TARGET_MODEL_PATH = f"{cwd}/target-model.pt"
 
 MOVED_TOWARD_COIN = "MOVED_TOWARD_COIN"
 DID_NOT_MOVE_TOWARD_COIN = "DID_NOT_MOVE_TOWARD_COIN"
@@ -107,10 +114,13 @@ ENV_ID = "Bombermann"
 MAX_STEPS = 400
 GAMMA = 0.95
 EVAL_SEED = []
+N_EPISODES = 10
 #Exploration parameters
 MAX_EPSILON = 1.0
 MIN_EPSILON = 0.05
 DECAY_RATE = 0.0005
+
+
 
 class Game(TypedDict):
     """For typehints - this is the dictionary we're given by our environment overlords."""
@@ -124,6 +134,20 @@ class Game(TypedDict):
     # these aren't really important, so we don't expect them to be there
     # round: int
     # user_input: str | None
+
+class QTable():
+    """To initializing the q-table
+    """
+    def __init__(self, game_state: Game):
+        super(QTable, self).__init__()
+        self.game_state = game_state
+    
+    def initialize_q_table(self) -> np.ndarray:
+        "initializing qtable with 0 values"
+        state_space = self.game_state['field'].size
+        action_space = len(ACTIONS)
+        q_table = np.zeros((state_space, action_space))
+        return q_table
 
 def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
     """Returns True if a tile is free (i.e. can be stepped on by the player).
@@ -611,47 +635,10 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     self.memory.push(state, action, new_state, reward)
 
+
 #udate our model here
-    update()
+    self.target_model =_optimize_model(self, N_EPISODES, old_game_state)
 
-    # _optimize_model(self)
-
-    # # soft-update the target network
-    # target_net_state_dict = self.target_model.state_dict()
-    # policy_net_state_dict = self.policy_model.state_dict()
-    # for key in policy_net_state_dict:
-    #     target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (1 - TAU)
-    # self.target_model.load_state_dict(target_net_state_dict)
-
-
-# class QTable:
-#     """Q-table to store the corresponding {state: action} Q-values
-#     basedd on the rewards receiving during the gameplay
-#     """
-#     def __init__(self, game_state: np.ndarray) -> np.ndarray:
-#         self.state = features_to_state()
-#         self.epsilon = epsilon
-
-
-#         "initializing qtable with 0 values"
-#         state_space = game_state['field'].size
-#         action_space = len(ACTIONS)
-#         self.q_table = np.zeros((state_space, action_space))
-
-#     def update(self, state, action, reward, next_state):
-#         """ Update Q-values using the Q-learning algorithm"""
-#         pass
-
-#     def choose_action(self):
-#         """Choose an action using epsilon-greedy policy"""
-#         return _epsilon_greedy_policy(self.q_table, self.state, self.epsilon)
-
-def initialize_q_table(game_state: np.ndarray) -> np.ndarray:
-    "initializing qtable with 0 values"
-    state_space = game_state['field'].size
-    action_space = len(ACTIONS)
-    q_table = np.zeros((state_space, action_space))
-    return q_table
 
 def _epsilon_greedy_policy(qtable: np.ndarray, state: int, epsilon: float) -> int:
     """
@@ -687,8 +674,8 @@ The Greedy policy will also be the final policy when the agent is trained.
     return action
 
 
-def update(self, n_training_episodes: int, game_state: np.ndarray, qtable: np.ndarray) ->np.ndarray:
-    """Just training the agent to update the qtable
+def _optimize_model(self, n_training_episodes: int, game_state: np.ndarray) ->np.ndarray:
+    """Training the agent to update the qtable
 
     Returns:
         np.ndarray: _description_
@@ -702,12 +689,12 @@ def update(self, n_training_episodes: int, game_state: np.ndarray, qtable: np.nd
         
         #repeat
         for step in range(MAX_STEPS):
-            action = _epsilon_greedy_policy(qtable, state, epsilon)# current state of agent is needed
+            action = _epsilon_greedy_policy(self.qtable, state, epsilon)# current state of agent is needed
             #new_state, reward, done, info, _ = game_state.step(action)# features to reward function is needed
             new_state = state_to_features(_next_game_state(game_state, action))
             reward = self.total_reward
-            qtable[state][action] = qtable[state][action] + LEARNING_RATE*(
-                reward + GAMMA * np.max(qtable[new_state]) - qtable[state][action])#current and previous state of agent 
+            self.qtable[state][action] = self.qtable[state][action] + LEARNING_RATE*(
+                reward + GAMMA * np.max(self.qtable[new_state]) - self.qtable[state][action])#current and previous state of agent 
             #if done, finish the episode
             #if done:
             if game_state:
@@ -715,28 +702,7 @@ def update(self, n_training_episodes: int, game_state: np.ndarray, qtable: np.nd
                 
             #update state
             state = new_state
-    return qtable
-
-
-# def gathering_game_state(self: any,game_state: list) -> np.array:
-
-#     # Check if we are in a different round
-#     if game_state["round"] != self.current_round:
-#         reset_self(self)
-#         self.current_round = game_state["round"]
-#     # Gather information about the game state
-#     arena = game_state['field']
-#     _, score, bombs_left, (x, y) = game_state['self']
-#     bombs = game_state['bombs']
-#     bomb_xys = [xy for (xy, t) in bombs]
-#     others = [xy for (n, s, b, xy) in game_state['others']]
-#     coins = game_state['coins']
-#     bomb_map = np.ones(arena.shape) * 5
-#     for (xb, yb), t in bombs:
-#         for (i, j) in [(xb + h, yb) for h in range(-3, 4)] + [(xb, yb + h) for h in range(-3, 4)]:
-#             if (0 < i < bomb_map.shape[0]) and (0 < j < bomb_map.shape[1]):
-#                 bomb_map[i, j] = min(bomb_map[i, j], t)
-#     return score, bombs_left, (x,y), bomb_xys, others, coins, bomb_map
+    return self.qtable
 
 
 def setup_training(self):
@@ -747,57 +713,34 @@ def setup_training(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    # Example: Setup an array that will note transition tuples
-    # (s, a, r, s')
-    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    self.total_reward = 0
+
+    self.qtable = QTable.initialize_q_table(self.game_state)
+
+    self.target_model = QTable.initialize_q_table(self.game_state)
 
 
-# def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
-#     """
-#     Called once per step to allow intermediate rewards based on game events.
+    if os.path.exists(TARGET_MODEL_PATH):
+        with open(TARGET_MODEL_PATH, 'rb') as file:
+            self.target_model = file
 
-#     When this method is called, self.events will contain a list of all game
-#     events relevant to your agent that occurred during the previous step. Consult
-#     settings.py to see what events are tracked. You can hand out rewards to your
-#     agent based on these events and your knowledge of the (new) game state.
+    self.model = self.target_model
 
-#     This is *one* of the places where you could update your agent.
+    self.x = [0]
+    self.y_score = [0]
+    self.y_reward = [0]
+    self.y_steps = [0]
 
-#     :param self: This object is passed to all callbacks and you can set arbitrary values.
-#     :param old_game_state: The state that was passed to the last call of `act`.
-#     :param self_action: The action that you took.
-#     :param new_game_state: The state the agent is in now.
-#     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
-#     """
-#     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
+    self.fig = plt.figure(figsize=(6, 3))
+    ax = plt.axes()
 
-#     # Idea: Add your own events to hand out rewards
-#     if ...:
-#         events.append(PLACEHOLDER_EVENT)
+    self.plot_score, = ax.plot(self.x, self.y_score, '-', color='blue', label='game score')
+    self.plot_reward, = ax.plot(self.x, self.y_reward, color='red', label='reward/100', linestyle='dashed', linewidth=1)
+    self.plot_steps, = ax.plot(self.x, self.y_steps, '-', color='green', label='steps/40')
+    ax.legend(loc='lower left')
 
-#     # state_to_features is defined in callbacks.py
-#     self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
+    plt.show(block=False)
 
-
-# def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
-#     """
-#     Called at the end of each game or when the agent died to hand out final rewards.
-#     This replaces game_events_occurred in this round.
-
-#     This is similar to game_events_occurred. self.events will contain all events that
-#     occurred during your agent's final step.
-
-#     This is *one* of the places where you could update your agent.
-#     This is also a good place to store an agent that you updated.
-
-#     :param self: The same object that is passed to all of your callbacks.
-#     """
-#     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-#     self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
-
-#     # Store the model
-#     with open("my-saved-model.pt", "wb") as file:
-#         pickle.dump(self.model, file)
 
 def game_events_occurred(self, old_game_state: Game, self_action: str, new_game_state: Game, events: list[str]):
     """Called once per step to allow intermediate rewards based on game events."""
@@ -838,25 +781,6 @@ def end_of_round(self, last_game_state: Game, last_action: str, events: list[str
     self.fig.canvas.flush_events()
 
     # Store the model
-    with open("my-saved-model.pt", "wb") as file:
+    with open(TARGET_MODEL_PATH, "wb") as file:
         pickle.dump(self.model, file)
-
-# def reward_from_events(self, events: List[str]) -> int:
-#     """
-#     *This is not a required function, but an idea to structure your code.*
-
-#     Here you can modify the rewards your agent get so as to en/discourage
-#     certain behavior.
-#     """
-#     game_rewards = {
-#         e.COIN_COLLECTED: 1,
-#         e.KILLED_OPPONENT: 5,
-#         PLACEHOLDER_EVENT: -.1  # idea: the custom event is bad
-#     }
-#     reward_sum = 0
-#     for event in events:
-#         if event in game_rewards:
-#             reward_sum += game_rewards[event]
-#     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
-#     return reward_sum
 
