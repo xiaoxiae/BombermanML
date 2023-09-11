@@ -1,6 +1,7 @@
 elo/
 *.pt
 models/
+ignored/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
