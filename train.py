@@ -21,6 +21,13 @@ TASKS = {
     "self": [
         ([None, "--scenario", "classic", "--n-rounds", "100"], True),
     ],
+    "multiple": [
+        (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
+        (["rule_based_agent", "--scenario", "empty", "--n-rounds", "1000"], False),
+        (["--scenario", "classic", "--n-rounds", "1000"], False),
+        (["rule_based_agent", "--scenario", "classic", "--n-rounds", "1000"], True),
+        ([None, None, None, "--scenario", "classic", "--n-rounds", "200"], True),
+    ],
 }
 
 if __name__ == "__main__":
