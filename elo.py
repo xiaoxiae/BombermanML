@@ -38,14 +38,60 @@ def load_results():
     return results
 
 
-def print_stats(stats):
+def get_all_games_played(stats):
+    games = list(stats['base_games'])
+
+    for a in stats['other_games']:
+        games += stats['other_games'][a]
+
+    return games
+
+
+
+def print_stats(stats, agent=None):
+    def _put_on_left(agent, game):
+        """Put the agent on the left side of the game (for easier code)."""
+        if game[0] == agent:
+            return game
+        else:
+            return [
+                game[2],
+                "=" if game[1] == "=" else "<" if game[1] == ">" else ">",
+                game[0],
+            ]
+
     print("Base agents:")
-    print(json.dumps(stats['base'], indent=4))
+    print(json.dumps(stats['base'], indent=4, sort_keys=True))
 
     if 'other' in stats:
         print()
         print("Other agents:")
-        print(json.dumps(stats['other'], indent=4))
+        print(json.dumps(stats['other'], indent=4, sort_keys=True))
+
+    if agent is not None:
+        print()
+        print(f"{agent}'s results against other agents:")
+
+        agent_scores = {}
+
+        for game in get_all_games_played(stats):
+            if agent in game:
+                _, result, other_agent = _put_on_left(agent, game)
+
+                if other_agent not in agent_scores:
+                    agent_scores[other_agent] = [0, 0, 0]  # win / draw / loss
+
+                if result == ">":
+                    agent_scores[other_agent][0] += 1
+                elif result == "=":
+                    agent_scores[other_agent][1] += 1
+                else:
+                    agent_scores[other_agent][2] += 1
+
+        for other_agent in agent_scores:
+            agent_scores[other_agent] = ':'.join(list(map(str, agent_scores[other_agent])))
+
+        print(json.dumps(agent_scores, indent=4, sort_keys=True))
 
 
 if __name__ == "__main__":
@@ -78,7 +124,9 @@ if __name__ == "__main__":
 
     stats_subparser = subparsers.add_parser("stats", add_help=False,
                                             help="Prints statistics about the current elos of agents.")
-    
+
+    stats_subparser.add_argument("--agent", type=str, help="Prints more detailed statistics about one specific agent.")
+
     duel_subparser = subparsers.add_parser("duel", help="Plays a match between two agents.")
 
     duel_subparser.add_argument("agent1", help="First duelist")
@@ -92,7 +140,7 @@ if __name__ == "__main__":
             print("No stats file calculated, run `python elo.py base` first!")
             sys.exit(1)
 
-        print_stats(json.load(open(STATS_FILE)))
+        print_stats(json.load(open(STATS_FILE)), agent=arguments.agent)
         sys.exit(0)
 
     # first, determine what games we need to play
@@ -122,7 +170,7 @@ if __name__ == "__main__":
 
         for i in range(len(base_agents)):
             games_to_play[(arguments.agent, base_agents[i])] = arguments.n
-    
+
     # for duel, it's just games against each other
     elif arguments.mode == 'duel':
         games_to_play[(arguments.agent1, arguments.agent2)] = arguments.n
@@ -183,4 +231,7 @@ if __name__ == "__main__":
     if not arguments.no_save:
         json.dump(stats, open(STATS_FILE, 'w'))
 
-    print_stats(stats)
+    if arguments.mode == 'agent':
+        print_stats(stats, agent=arguments.agent)
+    else:
+        print_stats(stats)
