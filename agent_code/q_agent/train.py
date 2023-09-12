@@ -3,6 +3,7 @@ from functools import lru_cache, cache
 
 import os
 import copy
+from itertools import product, permutations
 import pickle
 #from typing import List
 from typing import TypedDict
@@ -19,8 +20,8 @@ import settings as s
 
 cwd = os.path.abspath(os.path.dirname(__file__))
 
-# paths to the QTable models
-TARGET_MODEL_PATH = f"{cwd}/target-model.pt"
+# path to the QTable models
+MODEL_PATH = f"{cwd}/model.pt"
 
 MOVED_TOWARD_COIN = "MOVED_TOWARD_COIN"
 DID_NOT_MOVE_TOWARD_COIN = "DID_NOT_MOVE_TOWARD_COIN"
@@ -35,9 +36,9 @@ MOVED_TOWARD_PLAYER = "MOVED_TOWARD_PLAYER"
 DID_NOT_MOVE_TOWARD_PLAYER = "DID_NOT_MOVE_TOWARD_PLAYER"
 USELESS_WAIT = "USELESS_WAIT"
 
-FEATURE_VECTOR_SIZE = 21  # how many features our model has; ugly but hard to not hardcode
+FEATURE_VECTOR_SIZE = 12  # how many features our model has; ugly but hard to not hardcode
 
-MANUAL = False
+#MANUAL = False
 
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
@@ -102,6 +103,7 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 
 # Actions
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+STATE_SPACE = (17,17)
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 #Training parameters
@@ -131,22 +133,42 @@ class Game(TypedDict):
     self: tuple[str, int, bool, tuple[int, int]]
     others: list[tuple[str, int, bool, tuple[int, int]]]
     step: int
+    round: int
     # these aren't really important, so we don't expect them to be there
-    # round: int
     # user_input: str | None
 
 class QTable():
-    """To initializing the q-table
+    """
+        the structure of the q_table is a three linked dictionaries to reduce the domain of search
+        {state:{substate:{actions: probability}}} --> e.g: {(1,1):{feature:{'LEFT':0.95}}},
+        by this approach we can reduce the domain of search to substates that are just neighbour to our agent,
+        max 4* 2 ^ features
+        Features are binary
+        one example of one row from q_table:
+        {(0,1): {(0, 0, 0, 0, 0, 0, 0, 0, 0, 0): {'UP': 0,'RIGHT': 0,'DOWN': 0,'LEFT': 0,'WAIT': 0,'BOMB': 0}
+        
     """
     def __init__(self, game_state: Game):
         super(QTable, self).__init__()
         self.game_state = game_state
     
-    def initialize_q_table(self) -> np.ndarray:
-        "initializing qtable with 0 values"
-        state_space = self.game_state['field'].size
+    def initialize_q_table(self) -> dict:
+        """initializing an empty qtable
+        Returns:
+            np.ndarray: _description_
+        """
+        #state_space = self.game_state['field'].size
         action_space = len(ACTIONS)
-        q_table = np.zeros((state_space, action_space))
+        q_table = np.empty((STATE_SPACE[0]*STATE_SPACE[1], np.power(2, FEATURE_VECTOR_SIZE-11) ,action_space))
+        
+        # creating a linked dictionary as a q_table
+        # actions_dict = dict.fromkeys(ACTIONS,0)
+        # features_list = list(product([0,1],repeat=10))
+        # features_dict = dict.fromkeys(features_list, actions_dict)
+        # dimention = [i for i in range(0,17)]
+        # perm = permutations(dimention,2)
+        # q_table = dict.fromkeys(perm, features_dict)
+
         return q_table
 
 def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
@@ -194,8 +216,8 @@ def _reward_from_events(self, events: list[str]) -> list:
 
     self.logger.debug(f"Awarded {reward_sum} for events {', '.join(events)}")
 
-    if MANUAL:
-        print(f"Awarded {reward_sum} for events {', '.join(events)}")
+    # if MANUAL:
+    #     print(f"Awarded {reward_sum} for events {', '.join(events)}")
 
     return reward_sum
 
@@ -483,10 +505,9 @@ def _directions_to_safety(game_state) -> list[int]:
 @lru_cache(maxsize=10000)
 def _state_to_features(game_state: tuple | None) -> list | None:
     """
-    # 0..4 - direction to closest coin -- u, r, d, l, wait
-    # 5..9 - direction to closest crate -- u, r, d, l, wait
-    # 10..14 - direction to where placing a bomb will hurt another player -- u, r, d, l, place now
-    # 15..19 - direction to safety; has a one only if is in danger -- u, r, d, l, wait
+    # 0,1 self position
+    # 2..6 - direction to closest coin -- u, r, d, l, wait and direction to safety; has a one only if is in danger -- u, r, d, l, wait
+    # 7..11 - direction to closest crate -- u, r, d, l, wait and direction to where placing a bomb will hurt another player -- u, r, d, l, place now 
     # 20 - can we place a bomb (and live to tell the tale)?
     """
     game_state: Game = {
@@ -499,31 +520,33 @@ def _state_to_features(game_state: tuple | None) -> list | None:
     }
 
     feature_vector = [0] * FEATURE_VECTOR_SIZE
+    feature_vector[0] = game_state['self'][0]
+    feature_vector[1] = game_state['self'][1]
 
     if v := _directions_to_coins(game_state):
         for i in v:
-            feature_vector[i] = 1
+            feature_vector[i + 2] = 1
 
     if v := _directions_to_crates(game_state):
         for i in v:
-            feature_vector[i + 5] = 1
+            feature_vector[i + 7] = 1
 
     if v := _directions_to_enemy(game_state):
         for i in v:
-            feature_vector[i + 10] = 1
+            feature_vector[i + 7] = 1
 
     if v := _directions_to_safety(game_state):
         for i in v:
-            feature_vector[i + 15] = 1
+            feature_vector[i + 2] = 1
 
         # if we can get to safety by something other than waiting, don't wait
-        if v != [4]:
-            feature_vector[19] = 0
+        if v != [6]:
+            feature_vector[6] = 0
 
         # if we need to run away, mask other features to do that too
-        for i in range(3):
+        if 1 in [feature_vector[p + 2] for p in range(5) ]:
             for j in range(5):
-                feature_vector[j + 5 * i] &= feature_vector[j + 15]
+                feature_vector[j + 7] &= 1
     else:
         # TODO: directions away from the bomb
         #  if an enemy is blocking the way, it's still better to just run away from the bomb
@@ -531,10 +554,10 @@ def _state_to_features(game_state: tuple | None) -> list | None:
         pass
 
     if game_state["self"][2] and _can_escape_after_placement(game_state):
-        feature_vector[20] = 1
+        feature_vector[11] = 1
 
-    # feature 14 is 'place a bomb to kill player' so that needs to be masked with 20
-    feature_vector[14] &= feature_vector[20]
+    # # feature 14 is 'place a bomb to kill player' so that needs to be masked with 20
+    # feature_vector[14] &= feature_vector[20]
 
     return feature_vector
 
@@ -637,10 +660,10 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 
 #udate our model here
-    self.target_model =_optimize_model(self, N_EPISODES, old_game_state)
+    self.model =_update_model(self, N_EPISODES, old_game_state)
 
 
-def _epsilon_greedy_policy(qtable: np.ndarray, state: int, epsilon: float) -> int:
+def _epsilon_greedy_policy(qtable: dict, feature: list, game_state: Game, epsilon: float) -> int:
     """
 With a Probability of 1 - ɛ, we do exploitation, and with the probability ɛ,
 we do exploration. 
@@ -660,7 +683,7 @@ In the epsilon_greedy_policy we will:
         #action = ACTIONS[action]
     return action
 
-def _greedy_policy(qtable: np.ndarray, state: int) -> int:
+def _greedy_policy(qtable: dict, feature: list, game_state: Game) -> int:
     """
 Q-learning is an off-policy algorithm which means that the policy of 
    taking action and updating function is different.
@@ -669,19 +692,23 @@ In this example, the Epsilon Greedy policy is acting policy, and
 The Greedy policy will also be the final policy when the agent is trained.
    It is used to select the highest state and action value from the Q-Table.
 """
-    action = np.argmax(qtable[state])
+    action = np.argmax(qtable[game_state['self']][feature])
     #action = ACTIONS[action]
     return action
 
 
-def _optimize_model(self, n_training_episodes: int, game_state: np.ndarray) ->np.ndarray:
+def _update_model(self, n_training_episodes: int, game_state: Game) ->np.ndarray:
     """Training the agent to update the qtable
 
     Returns:
         np.ndarray: _description_
     """
+    epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*game_state['round'])
+    feature = state_to_features(game_state)
+    #state = {game_state['self']:feature}
+
     for episode in trange(n_training_episodes):#n_training_episodes must be taken from game_state
-        epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*episode)
+        epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*game_state['step'])
         #Reset the environment
         #state = game_state.reset()[0]# need a function to reset the game and recieve the new state of agent
         state = state_to_features(game_state)
@@ -689,12 +716,12 @@ def _optimize_model(self, n_training_episodes: int, game_state: np.ndarray) ->np
         
         #repeat
         for step in range(MAX_STEPS):
-            action = _epsilon_greedy_policy(self.qtable, state, epsilon)# current state of agent is needed
+            action = _epsilon_greedy_policy(self.model, state, epsilon)# current state of agent is needed
             #new_state, reward, done, info, _ = game_state.step(action)# features to reward function is needed
             new_state = state_to_features(_next_game_state(game_state, action))
             reward = self.total_reward
-            self.qtable[state][action] = self.qtable[state][action] + LEARNING_RATE*(
-                reward + GAMMA * np.max(self.qtable[new_state]) - self.qtable[state][action])#current and previous state of agent 
+            self.model[state][action] = self.model[state][action] + LEARNING_RATE*(
+                reward + GAMMA * np.max(self.model[new_state]) - self.model[state][action])#current and previous state of agent 
             #if done, finish the episode
             #if done:
             if game_state:
@@ -702,7 +729,7 @@ def _optimize_model(self, n_training_episodes: int, game_state: np.ndarray) ->np
                 
             #update state
             state = new_state
-    return self.qtable
+    return self.model
 
 
 def setup_training(self):
@@ -715,16 +742,11 @@ def setup_training(self):
     """
     self.total_reward = 0
 
-    self.qtable = QTable.initialize_q_table(self.game_state)
+    self.model = QTable.initialize_q_table(self)
 
-    self.target_model = QTable.initialize_q_table(self.game_state)
-
-
-    if os.path.exists(TARGET_MODEL_PATH):
-        with open(TARGET_MODEL_PATH, 'rb') as file:
-            self.target_model = file
-
-    self.model = self.target_model
+    if os.path.exists(MODEL_PATH):
+        with open(MODEL_PATH, 'rb') as file:
+            self.model = pickle.load(file)
 
     self.x = [0]
     self.y_score = [0]
@@ -781,6 +803,6 @@ def end_of_round(self, last_game_state: Game, last_action: str, events: list[str
     self.fig.canvas.flush_events()
 
     # Store the model
-    with open(TARGET_MODEL_PATH, "wb") as file:
+    with open(MODEL_PATH, "wb") as file:
         pickle.dump(self.model, file)
 
