@@ -50,18 +50,18 @@ DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 GAME_REWARDS = { # for untrained agent
     # hunt coins
-    MOVED_TOWARD_COIN: 2,
-    DID_NOT_MOVE_TOWARD_COIN: -4,     # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
+    MOVED_TOWARD_COIN: 4,
+    DID_NOT_MOVE_TOWARD_COIN: -6,     # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
     e.COIN_COLLECTED: 15,              # 10 * game reward
     # hunt people
-    e.KILLED_OPPONENT: 22,             # 10 * game reward # good action lies in the past
+    e.KILLED_OPPONENT: 20,             # 10 * game reward # good action lies in the past
     MOVED_TOWARD_PLAYER: 2,
     DID_NOT_MOVE_TOWARD_PLAYER: -4,
     # blow up crates
     MOVED_TOWARD_CRATE: 2,
     DID_NOT_MOVE_TOWARD_CRATE: -4,
     # basic stuff
-    e.GOT_KILLED: -65,                 # as bad as giving someone else a kill reward
+    e.GOT_KILLED: -60,                 # as bad as giving someone else a kill reward
     e.KILLED_SELF: 0,                   # not worse than being killed, so don't punish it (?)
     e.SURVIVED_ROUND: 0,                # dying is already punished, and standing in a corner until the timer runs out should not be rewarded
     e.INVALID_ACTION: -20,              # better than placing a bad bomb or suicide, but really not good
@@ -70,8 +70,8 @@ GAME_REWARDS = { # for untrained agent
     # be active!
     USELESS_WAIT: -1,                   # it may be good to wait until an explosion is over, so this shouldn't be penalized too much; must not be higher than INVALID_ACTION
     # meaningful bombs
-    PLACED_USEFUL_BOMB: 12,
-    PLACED_SUPER_USEFUL_BOMB: 40,
+    PLACED_USEFUL_BOMB: 15,
+    PLACED_SUPER_USEFUL_BOMB: 45,
     DID_NOT_PLACE_USEFUL_BOMB: -15,     # should be way more than what is gained by running away from the bomb
     e.CRATE_DESTROYED: 3,               # maybe it's bad to reward this because the action that led to this event lies in the past and we're already rewarding good bomb placement
     e.COIN_FOUND: 0,                    # agent cannot influence this, so don't reward it (?)
@@ -120,7 +120,7 @@ TAU = 1e-4  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
 # LAYER_SIZES = [500, 1500, 1200, 300]  # sizes of hidden layers
-LAYER_SIZES = [500, 2000, 2500, 1000, 500]  # sizes of hidden layers
+LAYER_SIZES = [500, 2000, 2000, 500]  # sizes of hidden layers
 
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
