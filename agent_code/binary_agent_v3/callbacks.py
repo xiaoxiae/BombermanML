@@ -9,7 +9,7 @@ cwd = os.path.abspath(os.path.dirname(__file__))
 def setup(self):
     if not self.train and not MANUAL:
         self.model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
-        self.model.load_state_dict(torch.load(TARGET_MODEL_PATH))
+        self.model.load_state_dict(torch.load(TARGET_MODEL_PATH, map_location=device))
         self.model.eval()
 
 
