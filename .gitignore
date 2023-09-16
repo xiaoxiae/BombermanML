@@ -1,6 +1,7 @@
 elo/
 *.pt
-models/
+models*
+logs*
 ignored/
 
 # Byte-compiled / optimized / DLL files

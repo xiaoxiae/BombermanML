@@ -42,10 +42,11 @@ GAME_REWARDS = {
     DID_NOT_MOVE_TOWARD_COIN: -100,
 
     # hunt people
-    MOVED_TOWARD_PLAYER: 10,
+    MOVED_TOWARD_PLAYER: 25,
+    DID_NOT_MOVE_TOWARD_PLAYER: -10,
 
     # blow up crates
-    MOVED_TOWARD_CRATE: 20,
+    MOVED_TOWARD_CRATE: 1,
 
     # basic stuff
     e.INVALID_ACTION: -100,
@@ -183,7 +184,7 @@ def _optimize_model(self):
 
     self.optimizer.zero_grad()
     loss.backward()
-    torch.nn.utils.clip_grad_value_(self.policy_model.parameters(), 100)  # TODO: to a variable?
+    torch.nn.utils.clip_grad_value_(self.policy_model.parameters(), 100)
     self.optimizer.step()
 
 
@@ -341,14 +342,14 @@ def _is_near_enemy(x: int, y: int, state: Game) -> bool:
     return False
 
 
-def _directions_to_thing(game_state: Game, thing: str) -> list[int]:
-    """Return a list with directions to the closest coin / crate / enemy."""
+def _directions_to_thing(game_state: Game, thing: str) -> tuple[list[int], float]:
+    """Return a list with directions to the closest coin / crate / enemy, along with distance."""
     if thing == 'coin' and len(game_state['coins']) == 0:
-        return []  # no coins
+        return [], -1  # no coins
     elif thing == 'crate' and 1 not in game_state['field']:
-        return []  # no crates
+        return [], -1  # no crates
     elif thing == 'enemy' and len(game_state['others']) == 0:
-        return []  # no enemies
+        return [], -1  # no enemies
 
     # stop conditions for each of the respective things
     stop_condition = {
@@ -376,7 +377,7 @@ def _directions_to_thing(game_state: Game, thing: str) -> list[int]:
         # stop condition (did we find what we wanted?)
         if stop_condition(*current_pos, current_game_state):
             if current_pos == start:
-                return [4]
+                return [4], 0
 
             # otherwise backtrack
             current_pos_set = {current_pos}
@@ -413,7 +414,7 @@ def _directions_to_thing(game_state: Game, thing: str) -> list[int]:
                 explored[neighbor] = [{current_pos}, current_distance + 1]
                 queue.append((new_game_state, current_distance + 1))
 
-    return list(goals)
+    return list(goals), goal_distances
 
 
 def _is_in_danger(game_state) -> bool:
@@ -505,17 +506,15 @@ def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
 
     feature_vector = [0] * FEATURE_VECTOR_SIZE
 
-    if v := _directions_to_thing(game_state, 'coin'):
-        for i in v:
-            feature_vector[i] = 1
+    for thing, offset in zip(
+            ['coin', 'crate', 'enemy'],
+            [0, 5, 10],
+    ):
+        v, d = _directions_to_thing(game_state, thing)
 
-    if v := _directions_to_thing(game_state, 'crate'):
+        # the farther away it is, the less the value of the vector is
         for i in v:
-            feature_vector[i + 5] = 1
-
-    if v := _directions_to_thing(game_state, 'enemy'):
-        for i in v:
-            feature_vector[i + 10] = 1
+            feature_vector[i + offset] = 1 / np.sqrt(d + 1)
 
     if v := _directions_to_safety(game_state, include_unsafe=True):
         for i in v:
@@ -528,13 +527,15 @@ def _state_to_features(game_state: tuple | None) -> torch.Tensor | None:
         # if we need to run away, mask other features to do that too
         for i in range(3):
             for j in range(5):
-                feature_vector[j + 5 * i] &= feature_vector[j + 15]
+                if feature_vector[j + 15] == 0:
+                    feature_vector[j + 5 * i] = 0
 
     if game_state["self"][2] and _can_escape_after_placement(game_state):
         feature_vector[20] = 1
 
     # feature 14 is 'place a bomb to kill player' so that needs to be masked with 20
-    feature_vector[14] &= feature_vector[20]
+    if feature_vector[20] == 0:
+        feature_vector[14] = 0
 
     return torch.tensor([feature_vector], device=device, dtype=torch.float)
 
@@ -572,17 +573,24 @@ def _is_bomb_useful(game_state) -> bool:
     return False
 
 
-def _reward_from_events(self, events: list[str]) -> torch.Tensor:
+def _reward_from_events(self, events: list[str], weighted_events: list[tuple[str, float]]) -> torch.Tensor:
     """Utility function for calculating the sum of rewards for events."""
     reward_sum = 0
+
     for event in events:
         if event in GAME_REWARDS:
             reward_sum += GAME_REWARDS[event]
 
-    self.logger.debug(f"Awarded {reward_sum} for events {', '.join(events)}")
+    for event, weight in weighted_events:
+        if event in GAME_REWARDS:
+            reward_sum += GAME_REWARDS[event] * weight
+
+    self.logger.debug(
+        f"Awarded {reward_sum} for events {', '.join(events)} and weighed events {', '.join([e for e, _ in weighted_events])}")
 
     if MANUAL:
-        print(f"Awarded {reward_sum} for events {', '.join(events)}")
+        print(
+            f"Awarded {reward_sum} for events {', '.join(events)} and weighed events {', '.join([e for e, _ in weighted_events])}")
 
     return torch.tensor([reward_sum], device=device, dtype=torch.float)
 
@@ -596,6 +604,8 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     state_list = state.tolist()[0]
 
+    weighted_events = []
+
     moving_events = [
         (MOVED_TOWARD_COIN, DID_NOT_MOVE_TOWARD_COIN, 0, 5),
         (MOVED_TOWARD_CRATE, DID_NOT_MOVE_TOWARD_CRATE, 5, 10),
@@ -608,19 +618,21 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
         if np.isclose(sum(state_list[i:j]), 0):
             continue
 
+        event_weight = 0
         for i in range(i, j):
-            if np.isclose(state_list[i], 1) and self_action == ACTIONS[i % 5]:
-                events.append(pos_event)
-                break
-        else:
-            events.append(neg_event)
+            if state_list[i] > 0:
+                event_weight = state_list[i]
 
-    # 14 means 'place a bomb to kill player' and not 'wait'
-    if state_list[14] == 1:
-        if self_action == 'WAIT':
-            events.remove(MOVED_TOWARD_PLAYER)
-        elif self_action == 'BOMB':
-            events.remove(DID_NOT_MOVE_TOWARD_PLAYER)
+                # for players, last action means 'place a bomb', not 'move towards player'
+                actions = ACTIONS \
+                    if pos_event is not MOVED_TOWARD_PLAYER \
+                    else ACTIONS[:4] + [ACTIONS[-1]]
+
+                if self_action == actions[i % 5]:
+                    weighted_events.append((pos_event, event_weight))
+                    break
+        else:
+            weighted_events.append((neg_event, event_weight))
 
     # generate positive/negative bomb events if we place a good/bad bomb
     if self_action == "BOMB" and old_game_state['self'][2]:
@@ -644,7 +656,7 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
                     events.append(USELESS_WAIT)
                     break
 
-    reward = _reward_from_events(self, events)
+    reward = _reward_from_events(self, events, weighted_events)
 
     self.total_reward += reward
 
@@ -668,11 +680,11 @@ def setup_training(self):
     self.target_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
 
     if os.path.exists(POLICY_MODEL_PATH):
-        self.policy_model.load_state_dict(torch.load(POLICY_MODEL_PATH))
+        self.policy_model.load_state_dict(torch.load(POLICY_MODEL_PATH, map_location=device))
         self.policy_model.eval()
 
     if os.path.exists(TARGET_MODEL_PATH):
-        self.target_model.load_state_dict(torch.load(TARGET_MODEL_PATH))
+        self.target_model.load_state_dict(torch.load(TARGET_MODEL_PATH, map_location=device))
         self.target_model.eval()
 
     self.model = self.policy_model

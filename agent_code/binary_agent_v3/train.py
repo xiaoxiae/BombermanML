@@ -717,11 +717,11 @@ def setup_training(self):
     self.target_model = DQN(FEATURE_VECTOR_SIZE, len(ACTIONS), LAYER_SIZES).to(device)
 
     if os.path.exists(POLICY_MODEL_PATH):
-        self.policy_model.load_state_dict(torch.load(POLICY_MODEL_PATH))
+        self.policy_model.load_state_dict(torch.load(POLICY_MODEL_PATH, map_location=device))
         self.policy_model.eval()
 
     if os.path.exists(TARGET_MODEL_PATH):
-        self.target_model.load_state_dict(torch.load(TARGET_MODEL_PATH))
+        self.target_model.load_state_dict(torch.load(TARGET_MODEL_PATH, map_location=device))
         self.target_model.eval()
 
     self.model = self.policy_model
