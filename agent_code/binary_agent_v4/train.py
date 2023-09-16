@@ -31,7 +31,7 @@ USELESS_WAIT = "USELESS_WAIT"
 
 cwd = os.path.abspath(os.path.dirname(__file__))
 
-device = "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
