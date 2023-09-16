@@ -1,12 +1,13 @@
 import argparse
+import copy
 import json
+import numpy as np
 import os
 import subprocess
 import sys
-import copy
 from collections import defaultdict
 from random import shuffle
-import numpy as np
+from matplotlib import pyplot as plt
 
 BASE_AGENTS = ["coin_collector_agent", "peaceful_agent", "random_agent", "rule_based_agent"]
 
@@ -71,7 +72,7 @@ def get_games_played(stats, agent=None):
     return games
 
 
-def print_stats(stats, agent=None):
+def print_stats(stats, agent=None, graph=False):
     def _format_agent_stats(agents: dict):
         return {agent: f"{elo_and_std[0]:.01f} +- {elo_and_std[1]:.01f}" for (agent, elo_and_std) in agents.items()}
 
@@ -104,6 +105,25 @@ def print_stats(stats, agent=None):
             agent_scores[other_agent] = ':'.join(list(map(str, agent_scores[other_agent])))
 
         print(json.dumps(agent_scores, indent=4, sort_keys=True))
+
+    if graph:
+        fig, ax = plt.subplots()
+
+        combined = stats['base'] | stats['other']
+
+        agents = sorted(list(stats['base'].keys())) + sorted(list(stats['other'].keys()))
+        elos = [combined[a][0] for a in agents]
+        errors = [combined[a][1] for a in agents]
+
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+        ax.bar(agents, elos, yerr=errors, label=agents, color=colors)
+        plt.xticks(rotation=45)
+
+        ax.set_ylabel('Elo')
+        ax.set_title('Agent performance based on duels in classic arena')
+
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -143,6 +163,9 @@ if __name__ == "__main__":
 
     stats_subparser.add_argument("--agent", type=str, help="Prints more detailed statistics about one specific agent.")
 
+    stats_subparser.add_argument("--graph", help="Whether to also display a nice matplotlib graph.",
+                                 action='store_true')
+
     duel_subparser = subparsers.add_parser("duel", help="Plays a match between two agents.")
 
     duel_subparser.add_argument("agent1", help="First duelist")
@@ -156,7 +179,7 @@ if __name__ == "__main__":
             print("No stats file calculated, run `python elo.py base` first!")
             sys.exit(1)
 
-        print_stats(load_stats(), agent=arguments.agent)
+        print_stats(load_stats(), agent=arguments.agent, graph=arguments.graph)
         sys.exit(0)
 
     # first, determine what games we need to play
