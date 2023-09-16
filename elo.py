@@ -123,6 +123,8 @@ def print_stats(stats, agent=None, graph=False):
         ax.set_ylabel('Elo')
         ax.set_title('Agent performance based on duels in classic arena')
 
+        plt.gcf().subplots_adjust(bottom=0.3)
+
         plt.show()
 
 
