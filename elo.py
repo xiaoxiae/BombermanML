@@ -195,12 +195,7 @@ if __name__ == "__main__":
     if arguments.mode == 'base' and arguments.recalculate:
         results = load_stats()["base_games"]
     elif arguments.mode == 'agent' and arguments.recalculate:
-        # TODO: this is just to recalculate
-        #  remove me
-        with open('elo/read.txt') as f:
-            results = eval(f.read().strip())
-
-        # results = get_games_played(load_stats(), agent=arguments.agent)
+        results = get_games_played(load_stats(), agent=arguments.agent)
     else:
         play_games(games_to_play)
         results = load_results()
