@@ -37,7 +37,7 @@ def act(self, game_state: Game) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    def _random_action(self) -> action:
+    def _random_action(self) -> str:
         """choosing random action when there is no state in the model or we are in the training mode
 
         Returns:
@@ -48,18 +48,28 @@ def act(self, game_state: Game) -> str:
         if random_int <= epsilon:
             action = random.choice(ACTIONS)
             self.logger.debug("Choosing action purely at random.")
-        return action
+            return action
+        else:
+            action = random.choice(ACTIONS)
     
 
-    if self.train:
-        return _random_action(self)
-    
     state = state_to_features(game_state)
-    model_result = self.model[state]
+    state = tuple(state)
+    # if self.train and not self.model.get(state):
+    #     return _random_action(self)
+    
+    if  self.model.get(state):
+        model_result = self.model[state]
+    else:
+        model_result = None
     if model_result:# if there is any value for the state in q_table
-        action = max(zip(model_result.values(), model_result.keys()))[1]#choosing the best action acording to the q_table
+        #action = max(zip(model_result.values(), model_result.keys()))[1]
+        #choosing the best action acording to the q_table
+        action = np.argmax(model[state])
+        action = ACTIONS[action]
         self.logger.info(f"Picking {action} from state {state}.")
         return action
     else:
-        return _random_action(self)
+        if self.train and not self.model.get(state):
+            return _random_action(self)
 
