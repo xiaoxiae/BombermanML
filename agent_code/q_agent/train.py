@@ -1,15 +1,12 @@
-from collections import namedtuple, deque
+from collections import  deque
 from functools import lru_cache, cache
 
 import os
 import copy
-from itertools import product, permutations
+from itertools import product
 import pickle
-#from typing import List
 from typing import TypedDict
-#from random import shuffle
 import random
-from tqdm import trange
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -21,7 +18,7 @@ import settings as s
 cwd = os.path.abspath(os.path.dirname(__file__))
 
 # path to the QTable models
-MODEL_PATH = f"{cwd}/model.pt"
+MODEL_PATH = f"{cwd}/model.pkl"
 
 MOVED_TOWARD_COIN = "MOVED_TOWARD_COIN"
 DID_NOT_MOVE_TOWARD_COIN = "DID_NOT_MOVE_TOWARD_COIN"
@@ -36,10 +33,9 @@ MOVED_TOWARD_PLAYER = "MOVED_TOWARD_PLAYER"
 DID_NOT_MOVE_TOWARD_PLAYER = "DID_NOT_MOVE_TOWARD_PLAYER"
 USELESS_WAIT = "USELESS_WAIT"
 
-FEATURE_VECTOR_SIZE = 12  # how many features our model has; ugly but hard to not hardcode
+FEATURE_VECTOR_SIZE = 11  # Number of features
 
-#MANUAL = False
-
+# Field to reduce the number of features
 EMPTY_FIELD = np.array([
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
     [-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1],
@@ -63,60 +59,44 @@ EMPTY_FIELD = np.array([
 #game rewards to each action of the agent
 GAME_REWARDS = {
     # hunt coins
-    MOVED_TOWARD_COIN: 10,
-    DID_NOT_MOVE_TOWARD_COIN: -100,
+    MOVED_TOWARD_COIN: 2,
+    DID_NOT_MOVE_TOWARD_COIN: -6,
     e.COIN_COLLECTED: 100,
     # hunt people
     e.KILLED_OPPONENT: 500,
-    MOVED_TOWARD_PLAYER: 10,
-    DID_NOT_MOVE_TOWARD_PLAYER: -10,
+    MOVED_TOWARD_PLAYER: 1,
+    DID_NOT_MOVE_TOWARD_PLAYER: -3,
     # blow up crates
-    MOVED_TOWARD_CRATE: 5,
-    DID_NOT_MOVE_TOWARD_CRATE: -5,
+    MOVED_TOWARD_CRATE: 3,
+    DID_NOT_MOVE_TOWARD_CRATE: -9,
     # basic stuff
-    e.GOT_KILLED: -1000,
-    e.KILLED_SELF: -1000,
-    e.SURVIVED_ROUND: 1000,
+    e.GOT_KILLED: -500,
+    e.KILLED_SELF: 0,
+    e.SURVIVED_ROUND: 0,
     e.INVALID_ACTION: -10,
-    MOVED_TOWARD_SAFETY: 100,
-    DID_NOT_MOVE_TOWARD_SAFETY: -1000,
+    MOVED_TOWARD_SAFETY: 5,
+    DID_NOT_MOVE_TOWARD_SAFETY: -15,
     # be active!
-    USELESS_WAIT: -100,
+    USELESS_WAIT: -1,
     # meaningful bombs
-    PLACED_USEFUL_BOMB: 50,
-    PLACED_SUPER_USEFUL_BOMB: 150,
-    DID_NOT_PLACE_USEFUL_BOMB: -1000,
-    e.CRATE_DESTROYED: 10,
-    e.COIN_FOUND: 10,
+    PLACED_USEFUL_BOMB: 20,
+    PLACED_SUPER_USEFUL_BOMB: 50,
+    DID_NOT_PLACE_USEFUL_BOMB: -20,
+    e.CRATE_DESTROYED: 0,
+    e.COIN_FOUND: 0,
 }
 
-# This is only an example!
-Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
-
-# Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 3  # keep only ... last transitions
-RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-
-# Events
-PLACEHOLDER_EVENT = "PLACEHOLDER"
 
 # Actions
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-STATE_SPACE = (17,17)
+
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 #Training parameters
-N_TRAINING_EPSIDOES = 10000
 LEARNING_RATE = 0.7
-#Evaluation_parameters
-N_EVAL_EPISODES = 100
 #Environment parameters
-ENV_ID = "Bombermann"
 MAX_STEPS = 400
 GAMMA = 0.95
-EVAL_SEED = []
-N_EPISODES = 10
 #Exploration parameters
 MAX_EPSILON = 1.0
 MIN_EPSILON = 0.05
@@ -134,18 +114,14 @@ class Game(TypedDict):
     others: list[tuple[str, int, bool, tuple[int, int]]]
     step: int
     round: int
-    # these aren't really important, so we don't expect them to be there
-    # user_input: str | None
 
 class QTable():
     """
-        the structure of the q_table is a three linked dictionaries to reduce the domain of search
-        {state:{substate:{actions: probability}}} --> e.g: {(1,1):{feature:{'LEFT':0.95}}},
-        by this approach we can reduce the domain of search to substates that are just neighbour to our agent,
-        max 4* 2 ^ features
+        the structure of the q_table is a linked dictionary to reduce the domain of search
+        {state:{actions: Q_value}} --> e.g: {feature:{'LEFT':-0.95}},
         Features are binary
-        one example of one row from q_table:
-        {(0,1): {(0, 0, 0, 0, 0, 0, 0, 0, 0, 0): {'UP': 0,'RIGHT': 0,'DOWN': 0,'LEFT': 0,'WAIT': 0,'BOMB': 0}
+        one example of one row from q_table at time of initializing:
+        {(0,1), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0): {'UP': 0,'RIGHT': 0,'DOWN': 0,'LEFT': 0,'WAIT': 0,'BOMB': 0}
         
     """
     def __init__(self, game_state: Game):
@@ -155,22 +131,27 @@ class QTable():
     def initialize_q_table(self) -> dict:
         """initializing an empty qtable
         Returns:
-            np.ndarray: _description_
+            dict: dictionary of {state:{actions: Q_value}}
         """
-        #state_space = self.game_state['field'].size
-        # action_space = len(ACTIONS)
-        # model = np.zeros((np.power(2, FEATURE_VECTOR_SIZE) ,action_space))
-        
-        model = {}
-        # creating a linked dictionary as a q_table
-        # actions_dict = dict.fromkeys(ACTIONS,0)
-        # features_list = list(product([0,1],repeat=10))
-        # features_dict = dict.fromkeys(features_list, actions_dict)
-        # dimention = [i for i in range(0,17)]
-        # perm = permutations(dimention,2)
-        # q_table = dict.fromkeys(perm, features_dict)
+        features_list = list(product([0, 1], repeat=10))
+        dim = []
+        for i in range(len(EMPTY_FIELD)):
+            for j in range(len(EMPTY_FIELD)):
+                if EMPTY_FIELD[i,j] == 0:
+                    dim.append((i,j))
 
-        return model
+        features = []
+        for p in dim:
+            for item in features_list:
+                features.append(p + item)
+
+        features_dict = {}
+        for p in dim:
+            feature_keys = [((p,) + feature) for feature in features_list]  # Add p as a single element to the key
+            for key in feature_keys:
+                features_dict[key] = dict.fromkeys(ACTIONS, 0)  # Initialize each nested dictionary
+
+        return features_dict
 
 def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
     """Returns True if a tile is free (i.e. can be stepped on by the player).
@@ -216,9 +197,6 @@ def _reward_from_events(self, events: list[str]) -> list:
             reward_sum += GAME_REWARDS[event]
 
     self.logger.debug(f"Awarded {reward_sum} for events {', '.join(events)}")
-
-    # if MANUAL:
-    #     print(f"Awarded {reward_sum} for events {', '.join(events)}")
 
     return reward_sum
 
@@ -506,11 +484,13 @@ def _directions_to_safety(game_state) -> list[int]:
 @lru_cache(maxsize=10000)
 def _state_to_features(game_state: tuple | None) -> list | None:
     """
-    # 0,1 self position
-    # 2..6 - direction to closest coin -- u, r, d, l, wait and direction to safety; has a one only if is in danger -- u, r, d, l, wait
-    # 7..11 - direction to closest crate -- u, r, d, l, wait and direction to where placing a bomb will hurt another player -- u, r, d, l, place now 
-    # 20 - can we place a bomb (and live to tell the tale)?
+    # 0 self position
+    # 2..5 - direction to closest coin -- u, r, d, l, wait and direction to safety; has a one only if is in danger -- u, r, d, l, wait
+    # 6..10 - direction to closest crate -- u, r, d, l, wait and direction to where placing a bomb will hurt another player -- u, r, d, l, place now 
+    
     """
+    if game_state is None:
+        return None
     game_state: Game = {
         'field': np.array(game_state[0]),
         'bombs': list(game_state[1]),
@@ -521,33 +501,33 @@ def _state_to_features(game_state: tuple | None) -> list | None:
     }
 
     feature_vector = [0] * FEATURE_VECTOR_SIZE
-    feature_vector[0] = game_state['self'][3][0]
-    feature_vector[1] = game_state['self'][3][1]
+    feature_vector[0] = game_state['self'][3]
+    
 
     if v := _directions_to_coins(game_state):
         for i in v:
-            feature_vector[i + 2] = 1
+            feature_vector[i + 1] = 1
 
     if v := _directions_to_crates(game_state):
         for i in v:
-            feature_vector[i + 7] = 1
+            feature_vector[i + 6] = 1
 
     if v := _directions_to_enemy(game_state):
         for i in v:
-            feature_vector[i + 7] = 1
+            feature_vector[i + 6] = 1
 
     if v := _directions_to_safety(game_state):
         for i in v:
-            feature_vector[i + 2] = 1
+            feature_vector[i + 1] = 1
 
         # if we can get to safety by something other than waiting, don't wait
-        if v != [6]:
-            feature_vector[6] = 0
+        if v != [5]:
+            feature_vector[5] = 0
 
         # if we need to run away, mask other features to do that too
-        if 1 in [feature_vector[p + 2] for p in range(5) ]:
+        if 1 in [feature_vector[p + 1] for p in range(5) ]:
             for j in range(5):
-                feature_vector[j + 7] &= 1
+                feature_vector[j + 6] &= 1
     else:
         # TODO: directions away from the bomb
         #  if an enemy is blocking the way, it's still better to just run away from the bomb
@@ -555,10 +535,7 @@ def _state_to_features(game_state: tuple | None) -> list | None:
         pass
 
     if game_state["self"][2] and _can_escape_after_placement(game_state):
-        feature_vector[11] = 1
-
-    # # feature 14 is 'place a bomb to kill player' so that needs to be masked with 20
-    # feature_vector[14] &= feature_vector[20]
+        feature_vector[10] = 1
 
     return feature_vector
 
@@ -600,16 +577,12 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
                         new_game_state: Game | None, events: list[str]):
     """Called after each step when training. Does the training."""
     state = state_to_features(old_game_state)
-    # new_state = state_to_features(new_game_state)
-    # action = [ACTIONS.index(self_action)]
-
-    #state_list = state.tolist()[0]
 
     moving_events = [
-        (MOVED_TOWARD_COIN, DID_NOT_MOVE_TOWARD_COIN, 2, 6),
-        (MOVED_TOWARD_CRATE, DID_NOT_MOVE_TOWARD_CRATE, 7, 11),
-        (MOVED_TOWARD_PLAYER, DID_NOT_MOVE_TOWARD_PLAYER, 7, 11),
-        (MOVED_TOWARD_SAFETY, DID_NOT_MOVE_TOWARD_SAFETY, 2, 6),
+        (MOVED_TOWARD_COIN, DID_NOT_MOVE_TOWARD_COIN, 1, 5),
+        (MOVED_TOWARD_CRATE, DID_NOT_MOVE_TOWARD_CRATE, 6, 10),
+        (MOVED_TOWARD_PLAYER, DID_NOT_MOVE_TOWARD_PLAYER, 6, 10),
+        (MOVED_TOWARD_SAFETY, DID_NOT_MOVE_TOWARD_SAFETY, 1, 5),
     ]
 
     # generate positive/negative events if we move after the objectives
@@ -625,7 +598,7 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
             events.append(neg_event)
 
     # 14 means 'place a bomb to kill player' and not 'wait'
-    if state[11] == 1:
+    if state[10] == 1:
         if self_action == 'WAIT' and MOVED_TOWARD_PLAYER in events:
             events.remove(MOVED_TOWARD_PLAYER)
         elif self_action == 'BOMB' and DID_NOT_MOVE_TOWARD_PLAYER in events:
@@ -633,35 +606,22 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
     # generate positive/negative bomb events if we place a good/bad bomb
     if self_action == "BOMB" and old_game_state['self'][2]:
-        if _is_bomb_useful(old_game_state) and state[11] == 1:
+        if _is_bomb_useful(old_game_state) and state[10] == 1:
             # if it endangers a player, it's super useful; otherwise it's just useful
-            if state[11]:
+            if state[10]:
                 events.append(PLACED_SUPER_USEFUL_BOMB)
             else:
                 events.append(PLACED_USEFUL_BOMB)
         else:
             events.append(DID_NOT_PLACE_USEFUL_BOMB)
 
-    # # if we wait, make sure it's meaningful (i.e. we weren't recommended to move somewhere)
-    # if self_action == "WAIT":
-    #     # waiting near a crate / player when we can place a bomb is also useless
-    #     if state[20] == 1 and (state[9] == 1 or state[14] == 1):
-    #         events.append(USELESS_WAIT)
-    #     else:
-    #         for i in [j + 5 * i for i in range(3) for j in range(4)]:
-    #             if state[i] == 1:
-    #                 events.append(USELESS_WAIT)
-    #                 break
-
     reward = _reward_from_events(self, events)
 
     self.total_reward += reward
 
-    # self.memory.push(state, action, new_state, reward)
-
 
 #udate our model here
-    self.model =_update_model(self, old_game_state)
+    self.model =_update_model(self,old_game_state, state, self_action)
 
 
 def _epsilon_greedy_policy( model: dict, state: list,  epsilon: float) -> str:
@@ -677,12 +637,10 @@ In the epsilon_greedy_policy we will:
 
 """
     random_int = random.uniform(0,1)
-    if random_int > epsilon:
+    if state and random_int > epsilon:
         action = _greedy_policy(model,state)
     else:
         action = random.choice(ACTIONS)
-        # action = ACTIONS.index(action)
-        #action = ACTIONS[action]
     return action
 
 def _greedy_policy(model: dict, state: list) -> str:
@@ -700,49 +658,42 @@ The Greedy policy will also be the final policy when the agent is trained.
     return action
 
 
-def _update_model(self, game_state: Game) ->np.ndarray:
+def _update_model(self,game_state: Game, state: list, action: str) ->np.ndarray:
     """Training the agent to update the qtable
 
     Returns:
         np.ndarray: _description_
     """
-    # epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*game_state['round'])
-    # feature = state_to_features(game_state)
-    #state = {game_state['self']:feature}
+    epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE * game_state['step'])
 
-    for episode in trange(game_state['round']):#n_training_episodes must be taken from game_state
-        epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE * episode)
-        #Reset the environment
-        #state = game_state.reset()[0]# need a function to reset the game and recieve the new state of agent
-        state = state_to_features(game_state)
+    if state:# if state is not None
         state = tuple(state)
-        #done = False
-        
-        #repeat
-        for _ in range(MAX_STEPS):
-            action = _epsilon_greedy_policy(self.model, state, epsilon)# current state of agent is needed
-            #new_state, reward, done, info, _ = game_state.step(action)# features to reward function is needed
-            new_state = state_to_features(_next_game_state(game_state, action))
-            reward = self.total_reward
-            if not self.model.get(state):
-                self.model[state] = 0 #  if no Key create the key
-            else:
+    if not action : # if action is None go for random action
+        action = _epsilon_greedy_policy(self.model, state, epsilon)
+    # find the new state according to previous one and the action in QTable
+    new_state = state_to_features(_next_game_state(game_state, action))
 
-                if self.model[state][action] and new_state:
-                    new_state = tuple(new_state)
-                    self.model[state][action] = self.model[state][action] + LEARNING_RATE*(
-                        reward + GAMMA * np.max(self.model[new_state]) - self.model[state][action])#current and previous state of agent 
-                else:
-                    self.model[state][action] = LEARNING_RATE * reward
-                #if done, finish the episode
-                #if done:
-                if game_state:
-                    break
-                    
-                #update state
-                state = new_state
+    if new_state: # if the action is not valid which result a None new_state do Not use this new_state
+        new_state = tuple(new_state)
+    reward = self.total_reward
+    if not new_state: # None then put -inf to the unvalid action in that state and jump out of this function without updating the current state
+        self.model[state][action] = -np.inf
+        pass
+    else:
+
+        if self.model[state][action] is not None and new_state: # if action is valid, update the Qvalue of that state_action
+            
+            self.model[state][action] = self.model[state][action] + LEARNING_RATE*(
+                reward + GAMMA * max(self.model[new_state].values()) - self.model[state][action])
+        else:
+            self.model[state][action] = LEARNING_RATE * reward
+            # end of the game
+        if game_state is None:
+            pass
+            
+        #update state
+        state = new_state
     return self.model
-
 
 def setup_training(self):
     """
@@ -754,11 +705,14 @@ def setup_training(self):
     """
     self.total_reward = 0
 
-    self.model = QTable.initialize_q_table(self)
+    
 
     if os.path.exists(MODEL_PATH):
         with open(MODEL_PATH, 'rb') as file:
             self.model = pickle.load(file)
+    else:
+        self.model = QTable.initialize_q_table(self)
+
 
     self.x = [0]
     self.y_score = [0]

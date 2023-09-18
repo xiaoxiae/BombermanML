@@ -1,9 +1,10 @@
 
-from .train import *
-
-
 import pickle
 import random
+
+from agent_code.q_agent.train import *
+
+
 
 cwd = os.path.abspath(os.path.dirname(__file__))
 
@@ -41,7 +42,7 @@ def act(self, game_state: Game) -> str:
         """choosing random action when there is no state in the model or we are in the training mode
 
         Returns:
-            action: _description_
+            action: according to QTable or random action
         """
         epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*game_state['step'])
         random_int = random.uniform(0,1)
@@ -55,21 +56,17 @@ def act(self, game_state: Game) -> str:
 
     state = state_to_features(game_state)
     state = tuple(state)
-    # if self.train and not self.model.get(state):
-    #     return _random_action(self)
     
     if  self.model.get(state):
         model_result = self.model[state]
     else:
         model_result = None
-    if model_result:# if there is any value for the state in q_table
-        #action = max(zip(model_result.values(), model_result.keys()))[1]
-        #choosing the best action acording to the q_table
-        action = np.argmax(model[state])
+    if max(model_result.values()) != 0:# if the max is the default one go for random action
+        action = np.argmax(list(model_result.values()))
         action = ACTIONS[action]
         self.logger.info(f"Picking {action} from state {state}.")
         return action
-    else:
-        if self.train and not self.model.get(state):
-            return _random_action(self)
+    elif self.train :
+        action = _random_action(self)
+        return action
 
