@@ -38,20 +38,20 @@ def act(self, game_state: Game) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    def _random_action(self) -> str:
+    # def _random_action(self) -> str:
         """choosing random action when there is no state in the model or we are in the training mode
 
         Returns:
             action: according to QTable or random action
         """
-        epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*game_state['step'])
-        random_int = random.uniform(0,1)
-        if random_int <= epsilon:
-            action = random.choice(ACTIONS)
-            self.logger.debug("Choosing action purely at random.")
-            return action
-        else:
-            action = random.choice(ACTIONS)
+        # epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE*game_state['step'])
+        # random_int = random.uniform(0,1)
+        # if random_int <= epsilon:
+        #     action = random.choice(ACTIONS)
+        #     self.logger.debug("Choosing action purely at random.")
+        #     return action
+        # else:
+            # action = random.choice(ACTIONS)
     
 
     state = state_to_features(game_state)
@@ -61,12 +61,21 @@ def act(self, game_state: Game) -> str:
         model_result = self.model[state]
     else:
         model_result = None
-    if max(model_result.values()) != 0:# if the max is the default one go for random action
-        action = np.argmax(list(model_result.values()))
-        action = ACTIONS[action]
-        self.logger.info(f"Picking {action} from state {state}.")
+    if max(model_result.values()) != ZERO:# if the max is the default one go for random action
+        epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
+        random_int = random.uniform(0,1)
+        if random_int >= epsilon:
+            action = random.choice(ACTIONS)
+            self.logger.debug("Choosing action purely at random.")
+            return action
+        else:
+            action = np.argmax(list(model_result.values()))
+            action = ACTIONS[action]
+            self.logger.info(f"Picking {action} from state {state}.")
+            return action
+    elif self.train:
+        action = random.choice(ACTIONS)
         return action
-    elif self.train :
-        action = _random_action(self)
+    else:
+        action = random.choice(ACTIONS)
         return action
-

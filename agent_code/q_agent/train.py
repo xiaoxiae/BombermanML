@@ -34,6 +34,7 @@ DID_NOT_MOVE_TOWARD_PLAYER = "DID_NOT_MOVE_TOWARD_PLAYER"
 USELESS_WAIT = "USELESS_WAIT"
 
 FEATURE_VECTOR_SIZE = 11  # Number of features
+ZERO = 0.0
 
 # Field to reduce the number of features
 EMPTY_FIELD = np.array([
@@ -149,7 +150,7 @@ class QTable():
         for p in dim:
             feature_keys = [((p,) + feature) for feature in features_list]  # Add p as a single element to the key
             for key in feature_keys:
-                features_dict[key] = dict.fromkeys(ACTIONS, 0)  # Initialize each nested dictionary
+                features_dict[key] = dict.fromkeys(ACTIONS, 0.0)  # Initialize each nested dictionary
 
         return features_dict
 
@@ -163,7 +164,7 @@ def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
     return game_state['field'][x][y] == 0 and game_state['explosion_map'][x][y] == 0
 
 @cache
-def _get_blast_coords( x: int, y: int) -> tuple[tuple[int, int]]:
+def _get_blast_coords(x: int, y: int) -> tuple[tuple[int, int]]:
     """For a given bomb at (x, y), return all coordinates affected by its blast."""
     if EMPTY_FIELD[x][y] == -1:
         return tuple()
@@ -363,8 +364,9 @@ def _directions_to_enemy(game_state: Game) ->list[int]:
 
         for n in current_game_state['others']:
             # if placing a bomb would kill another player, we're here
+            # if n[-1]  in _get_blast_coords(*current):
             if n[-1] in _get_blast_coords(*current):
-                # if we're at the start, index 4 signals "place a bomb now"
+                # if we're at the start, index 5 signals "place a bomb now"
                 if current == start:
                     return [4]
 
@@ -434,6 +436,7 @@ def _directions_to_crates(game_state: Game) -> list[int]:
 
                 queue.append((new_game_state, distance + 1))
             elif current_game_state['field'][neighbor[0]][neighbor[1]] == 1:
+                # if we're at the start, index 5 signals "place a bomb now"
                 if current == start:
                     return [4]
 
@@ -478,7 +481,7 @@ def _directions_to_safety(game_state) -> list[int]:
                 continue
 
             queue.append((new_game_state, list(action_history) + [action]))
-
+    # actions = [ACTIONS.index(action) for action in valid_actions]
     return [ACTIONS.index(action) for action in valid_actions]
 
 @lru_cache(maxsize=10000)
@@ -486,7 +489,7 @@ def _state_to_features(game_state: tuple | None) -> list | None:
     """
     # 0 self position
     # 2..5 - direction to closest coin -- u, r, d, l, wait and direction to safety; has a one only if is in danger -- u, r, d, l, wait
-    # 6..10 - direction to closest crate -- u, r, d, l, wait and direction to where placing a bomb will hurt another player -- u, r, d, l, place now 
+    # 6..10 - direction to closest crate -- u, r, d, l, place a bomb and direction to where placing a bomb will hurt another player -- u, r, d, l, place now 
     
     """
     if game_state is None:
@@ -520,14 +523,15 @@ def _state_to_features(game_state: tuple | None) -> list | None:
         for i in v:
             feature_vector[i + 1] = 1
 
-        # if we can get to safety by something other than waiting, don't wait
-        if v != [5]:
-            feature_vector[5] = 0
+        # # if we can get to safety by something other than waiting, don't wait
+        # if v != [5]:
+        #     feature_vector[5] = 0
 
         # if we need to run away, mask other features to do that too
-        if 1 in [feature_vector[p + 1] for p in range(5) ]:
-            for j in range(5):
+        if 1 in v: # [feature_vector[p + 1] for p in range(5) ]
+            for j in range(4):
                 feature_vector[j + 6] &= 1
+            feature_vector[10] = 0
     else:
         # TODO: directions away from the bomb
         #  if an enemy is blocking the way, it's still better to just run away from the bomb
@@ -597,7 +601,7 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
         else:
             events.append(neg_event)
 
-    # 14 means 'place a bomb to kill player' and not 'wait'
+    # 10 means 'place a bomb to kill player' and not 'wait'
     if state[10] == 1:
         if self_action == 'WAIT' and MOVED_TOWARD_PLAYER in events:
             events.remove(MOVED_TOWARD_PLAYER)
@@ -658,13 +662,16 @@ The Greedy policy will also be the final policy when the agent is trained.
     return action
 
 
-def _update_model(self,game_state: Game, state: list, action: str) ->np.ndarray:
+def _update_model(self,game_state: Game, state: list | None, action: str| None) ->np.ndarray:
     """Training the agent to update the qtable
 
     Returns:
         np.ndarray: _description_
     """
     epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON)*np.exp(-DECAY_RATE * game_state['step'])
+        # end of the game
+    if game_state is None:
+        pass
 
     if state:# if state is not None
         state = tuple(state)
@@ -672,27 +679,19 @@ def _update_model(self,game_state: Game, state: list, action: str) ->np.ndarray:
         action = _epsilon_greedy_policy(self.model, state, epsilon)
     # find the new state according to previous one and the action in QTable
     new_state = state_to_features(_next_game_state(game_state, action))
-
-    if new_state: # if the action is not valid which result a None new_state do Not use this new_state
-        new_state = tuple(new_state)
     reward = self.total_reward
-    if not new_state: # None then put -inf to the unvalid action in that state and jump out of this function without updating the current state
-        self.model[state][action] = -np.inf
-        pass
-    else:
 
-        if self.model[state][action] is not None and new_state: # if action is valid, update the Qvalue of that state_action
-            
-            self.model[state][action] = self.model[state][action] + LEARNING_RATE*(
-                reward + GAMMA * max(self.model[new_state].values()) - self.model[state][action])
-        else:
-            self.model[state][action] = LEARNING_RATE * reward
-            # end of the game
-        if game_state is None:
-            pass
-            
-        #update state
-        state = new_state
+    if (self.model[state][action] is not None) and new_state: # if action is valid, update the Qvalue of that state_action
+        
+        new_state = tuple(new_state)
+        model_new_result = self.model[new_state]
+        max_result = max(model_new_result.values())
+
+        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * max_result - self.model[state][action])
+
+    elif new_state is None:
+        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * ZERO - self.model[state][action])
+
     return self.model
 
 def setup_training(self):
