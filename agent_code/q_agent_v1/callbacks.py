@@ -72,8 +72,11 @@ def act(self, game_state: Game) -> str:
                     self.logger.debug(f"***************Choosing  {action}  purely at random in {state}")
                     return action
                 # else:
-                action = np.argmax(list(model_result.values()))
-                action = ACTIONS[action]
+                # action = np.argmax(list(model_result.values()))
+                max_value = max(model_result.values())
+                possible_actions = [key for key, val in model_result.items() if abs(max_value - val) < 1e-4]
+                # action = list(model_result.keys())[action]
+                action = random.choice(possible_actions)
                 self.logger.info(f"Picking {action} from state {state}.")
                 return action
             # else:

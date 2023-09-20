@@ -530,7 +530,7 @@ def _state_to_features(game_state: tuple | None) -> list | None:
     }
 
     feature_vector = [0] * FEATURE_VECTOR_SIZE
-    feature_vector[21] = game_state['self'][3]
+    # feature_vector[21] = game_state['self'][3]
 
     if v := _directions_to_coins(game_state):
         for i in v:
@@ -665,7 +665,7 @@ def _process_game_event(self, old_game_state: Game, previous_action: str,self_ac
 
 
 #udate our model here
-    self.model =_update_model(self,old_game_state, state, new_state, self_action, previous_action)
+    self.model =_update_model(self,old_game_state, state, new_state, self_action, previous_action, reward)
 
 
 def _epsilon_greedy_policy( model: dict, state: list,  epsilon: float) -> str:
@@ -702,7 +702,7 @@ The Greedy policy will also be the final policy when the agent is trained.
     return action
 
 
-def _update_model(self,game_state: Game, state: list | None,new_state: list |None, action: str| None, previous_action: str| None) ->np.ndarray:
+def _update_model(self,game_state: Game, state: list | None,new_state: list |None, action: str| None, previous_action: str| None, reward: float) ->np.ndarray:
     """Training the agent to update the qtable
 
     Returns:
@@ -718,10 +718,10 @@ def _update_model(self,game_state: Game, state: list | None,new_state: list |Non
     if not action : # if action is None go for random action
         action = _epsilon_greedy_policy(self.model, state, epsilon)
 
-    if not previous_action : # if action is None go for random action
-        previous_action = _epsilon_greedy_policy(self.model, state, epsilon)
+    # if not previous_action : # if action is None go for random action
+    #     previous_action = _epsilon_greedy_policy(self.model, state, epsilon)
     # find the new state according to previous one and the action in QTable
-    reward = self.total_reward
+    # reward = self.total_reward
 
     # new_state = state_to_features(_next_game_state(game_state, action))
     if new_state:
@@ -730,7 +730,8 @@ def _update_model(self,game_state: Game, state: list | None,new_state: list |Non
     
 
     if new_state is None or self.model.get(new_state) is None:
-        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * (-10) - self.model[state][action])
+        self.model[state][action] = self.model[state][action] +( 
+        LEARNING_RATE*(reward + GAMMA * (-10) - self.model[state][action]))
     
 
     elif (self.model[state][action] is not None) and new_state: # if action is valid, update the Qvalue of that state_action
@@ -739,7 +740,8 @@ def _update_model(self,game_state: Game, state: list | None,new_state: list |Non
         model_new_result = self.model[new_state]
         max_result = max(model_new_result.values())
 
-        self.model[state][action] = self.model[state][previous_action] + LEARNING_RATE*(reward + GAMMA * max_result - self.model[state][action])
+        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(
+            reward + GAMMA * max_result - self.model[state][action])
 
     return self.model
 
