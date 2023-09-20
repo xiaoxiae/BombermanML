@@ -1,5 +1,6 @@
 from collections import  deque
 from functools import lru_cache, cache
+from deepdiff import DeepDiff
 
 import os
 import copy
@@ -61,27 +62,55 @@ EMPTY_FIELD = np.array([
 #game rewards to each action of the agent
 GAME_REWARDS = {
     # hunt coins
-    MOVED_TOWARD_COIN: 50,
-    DID_NOT_MOVE_TOWARD_COIN: -100,
-
+    MOVED_TOWARD_COIN: 2,
+    DID_NOT_MOVE_TOWARD_COIN: -6,
+    e.COIN_COLLECTED: 10,
     # hunt people
-    MOVED_TOWARD_PLAYER: 10,
-
+    e.KILLED_OPPONENT: 10,
+    MOVED_TOWARD_PLAYER: 1,
+    DID_NOT_MOVE_TOWARD_PLAYER: -3,
     # blow up crates
-    MOVED_TOWARD_CRATE: 20,
-
+    MOVED_TOWARD_CRATE: 3,
+    DID_NOT_MOVE_TOWARD_CRATE: -9,
     # basic stuff
-    e.INVALID_ACTION: -100,
-    DID_NOT_MOVE_TOWARD_SAFETY: -500,
-
+    e.GOT_KILLED: -15,
+    e.KILLED_SELF: -30,
+    e.SURVIVED_ROUND: 15,
+    e.INVALID_ACTION: -10,
+    MOVED_TOWARD_SAFETY: 5,
+    DID_NOT_MOVE_TOWARD_SAFETY: -15,
     # be active!
-    USELESS_WAIT: -100,
-
+    USELESS_WAIT: -1,
     # meaningful bombs
-    PLACED_USEFUL_BOMB: 50,
-    PLACED_SUPER_USEFUL_BOMB: 150,
-    DID_NOT_PLACE_USEFUL_BOMB: -500,
+    PLACED_USEFUL_BOMB: 5,
+    PLACED_SUPER_USEFUL_BOMB: 10,
+    DID_NOT_PLACE_USEFUL_BOMB: -10,
+    e.CRATE_DESTROYED: 5,
+    e.COIN_FOUND: 0,
 }
+# GAME_REWARDS = {
+#     # hunt coins
+#     MOVED_TOWARD_COIN: 25,#50,
+#     DID_NOT_MOVE_TOWARD_COIN: -25,
+
+#     # hunt people
+#     MOVED_TOWARD_PLAYER: 1,
+
+#     # blow up crates
+#     MOVED_TOWARD_CRATE: 5,
+
+#     # basic stuff
+#     e.INVALID_ACTION: -10,
+#     DID_NOT_MOVE_TOWARD_SAFETY: -50,
+
+#     # be active!
+#     USELESS_WAIT: -10,
+
+#     # meaningful bombs
+#     PLACED_USEFUL_BOMB: 50,#50,
+#     PLACED_SUPER_USEFUL_BOMB: 100,#150,
+#     DID_NOT_PLACE_USEFUL_BOMB: -100,
+# }
 
 
 # Actions
@@ -90,14 +119,14 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
 #Training parameters
-LEARNING_RATE = 0.7
+LEARNING_RATE = 0.9#0.7
 #Environment parameters
 MAX_STEPS = 400
-GAMMA = 0.95
+GAMMA = 0.99#0.95
 #Exploration parameters
 MAX_EPSILON = 1.0
-MIN_EPSILON = 0.05
-DECAY_RATE = 0.0005
+MIN_EPSILON = 0.6# It actually determines 1-MIN_EPSILON as value of first Epsilon in callbacks
+DECAY_RATE =  0.0005
 
 
 
@@ -160,7 +189,7 @@ def _tile_is_free(game_state: Game, x: int, y: int) -> bool:
 
     return game_state['field'][x][y] == 0 and game_state['explosion_map'][x][y] == 0
 
-@cache
+@lru_cache(maxsize=10000)
 def _get_blast_coords(x: int, y: int) -> tuple[tuple[int, int]]:
     """For a given bomb at (x, y), return all coordinates affected by its blast."""
     if EMPTY_FIELD[x][y] == -1:
@@ -575,11 +604,12 @@ def _is_bomb_useful(game_state) -> bool:
 
 
 
-def _process_game_event(self, old_game_state: Game, self_action: str,
+def _process_game_event(self, old_game_state: Game, previous_action: str,self_action: str,
                         new_game_state: Game | None, events: list[str]):
     """Called after each step when training. Does the training."""
     state = state_to_features(old_game_state)
     new_state = state_to_features(new_game_state)
+    # diff = DeepDiff(old_game_state, new_game_state)
 
 
     moving_events = [
@@ -635,7 +665,7 @@ def _process_game_event(self, old_game_state: Game, self_action: str,
 
 
 #udate our model here
-    self.model =_update_model(self,old_game_state, state, self_action)
+    self.model =_update_model(self,old_game_state, state, new_state, self_action, previous_action)
 
 
 def _epsilon_greedy_policy( model: dict, state: list,  epsilon: float) -> str:
@@ -672,7 +702,7 @@ The Greedy policy will also be the final policy when the agent is trained.
     return action
 
 
-def _update_model(self,game_state: Game, state: list | None, action: str| None) ->np.ndarray:
+def _update_model(self,game_state: Game, state: list | None,new_state: list |None, action: str| None, previous_action: str| None) ->np.ndarray:
     """Training the agent to update the qtable
 
     Returns:
@@ -687,17 +717,20 @@ def _update_model(self,game_state: Game, state: list | None, action: str| None) 
         state = tuple(state)
     if not action : # if action is None go for random action
         action = _epsilon_greedy_policy(self.model, state, epsilon)
+
+    if not previous_action : # if action is None go for random action
+        previous_action = _epsilon_greedy_policy(self.model, state, epsilon)
     # find the new state according to previous one and the action in QTable
     reward = self.total_reward
 
-    new_state = state_to_features(_next_game_state(game_state, action))
+    # new_state = state_to_features(_next_game_state(game_state, action))
     if new_state:
         new_state = tuple(new_state)
 
     
 
     if new_state is None or self.model.get(new_state) is None:
-        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * ZERO - self.model[state][action])
+        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * (-10) - self.model[state][action])
     
 
     elif (self.model[state][action] is not None) and new_state: # if action is valid, update the Qvalue of that state_action
@@ -706,12 +739,7 @@ def _update_model(self,game_state: Game, state: list | None, action: str| None) 
         model_new_result = self.model[new_state]
         max_result = max(model_new_result.values())
 
-        self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * max_result - self.model[state][action])
-
-    # elif new_state is None:
-    #     self.model[state][action] = self.model[state][action] + LEARNING_RATE*(reward + GAMMA * ZERO - self.model[state][action])
-    # elif self.model[state][action] is None:
-    #     self.model[state][action]= ZERO
+        self.model[state][action] = self.model[state][previous_action] + LEARNING_RATE*(reward + GAMMA * max_result - self.model[state][action])
 
     return self.model
 
@@ -724,6 +752,7 @@ def setup_training(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.total_reward = 0
+    self.previous_action = None
 
     
 
@@ -754,7 +783,7 @@ def game_events_occurred(self, old_game_state: Game, self_action: str, new_game_
     """Called once per step to allow intermediate rewards based on game events."""
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-    _process_game_event(self, old_game_state, self_action, new_game_state, events)
+    _process_game_event(self, old_game_state, self.previous_action, self_action, new_game_state, events)
 
 
 def end_of_round(self, last_game_state: Game, last_action: str, events: list[str]):
@@ -764,7 +793,7 @@ def end_of_round(self, last_game_state: Game, last_action: str, events: list[str
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
-    _process_game_event(self, last_game_state, last_action, None, events)
+    _process_game_event(self, last_game_state,self.previous_action, last_action, None, events)
 
     if len(self.x) > 100:
         self.x.pop(0)

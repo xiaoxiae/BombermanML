@@ -6,6 +6,7 @@ from agent_code.q_agent_v1.train import *
 
 
 
+
 cwd = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -59,23 +60,33 @@ def act(self, game_state: Game) -> str:
     
     if  self.model.get(state):
         model_result = self.model[state]
-        if not model_result.values(): #not None
+        if model_result.values() is not None: #not None
             # if max(model_result.values()) != ZERO:# if the max is the default one go for random action
+             
+            random_int = random.uniform(0,1)
             if self.train:
-                epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
-                random_int = random.uniform(0,1)
+                epsilon =  (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #MIN_EPSILON +
+
                 if random_int <= epsilon:
                     action = random.choice(ACTIONS)
-                    self.logger.debug("Choosing action purely at random.")
+                    self.logger.debug(f"***************Choosing  {action}  purely at random in {state}")
                     return action
-                else:
-                    action = np.argmax(list(model_result.values()))
-                    action = ACTIONS[action]
-                    self.logger.info(f"Picking {action} from state {state}.")
-                    return action
-            elif self.train:
-                action = random.choice(ACTIONS)
+                # else:
+                action = np.argmax(list(model_result.values()))
+                action = ACTIONS[action]
+                self.logger.info(f"Picking {action} from state {state}.")
                 return action
+            # else:
+            epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
+            if random_int >= epsilon:
+                action = random.choice(ACTIONS)
+                self.logger.debug(f"*************Choosing {action} purely at random in {state}")
+                return action
+            # else:
+            action = np.argmax(list(model_result.values()))
+            action = ACTIONS[action]
+            self.logger.info(f"Picking {action} from state {state}.")
+            return action
     else:
         # model_result = None
         action = random.choice(ACTIONS)
@@ -84,24 +95,3 @@ def act(self, game_state: Game) -> str:
         self.model[state]= dict.fromkeys(ACTIONS, ZERO)
         return action
         
-    # if max(model_result.values()) != ZERO:# if the max is the default one go for random action
-    #     epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
-    #     random_int = random.uniform(0,1)
-    #     if random_int >= epsilon:
-    #         action = random.choice(ACTIONS)
-    #         self.logger.debug("Choosing action purely at random.")
-    #         return action
-    #     else:
-    #         action = np.argmax(list(model_result.values()))
-    #         action = ACTIONS[action]
-    #         self.logger.info(f"Picking {action} from state {state}.")
-    #         return action
-    # elif self.train:
-    #     action = random.choice(ACTIONS)
-    #     # if self.model[state][action] is None:
-    #     #     self.model[state] = action
-    #     #     self.model[state][action]= ZERO
-    #     return action
-    # else:
-    #     action = random.choice(ACTIONS)
-    #     return action
