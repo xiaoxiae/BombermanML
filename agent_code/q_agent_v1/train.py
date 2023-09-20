@@ -80,7 +80,7 @@ GAME_REWARDS = {
     MOVED_TOWARD_SAFETY: 5,
     DID_NOT_MOVE_TOWARD_SAFETY: -15,
     # be active!
-    USELESS_WAIT: -1,
+    USELESS_WAIT: -10,
     # meaningful bombs
     PLACED_USEFUL_BOMB: 5,
     PLACED_SUPER_USEFUL_BOMB: 10,

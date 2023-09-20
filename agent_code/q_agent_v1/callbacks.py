@@ -82,8 +82,9 @@ def act(self, game_state: Game) -> str:
                 self.logger.info(f"Number of encountered states: {len(self.model)}  in round: {game_state['round']}.")
                 return action
             # else:
-            epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
-            if random_int >= epsilon:
+            # epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
+            epsilon = .01
+            if random_int <= epsilon:
                 action = random.choice(ACTIONS)
                 self.logger.debug(f"*************Choosing {action} purely at random in {state}")
                 return action
