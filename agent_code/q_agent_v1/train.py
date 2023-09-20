@@ -1,6 +1,6 @@
 from collections import  deque
 from functools import lru_cache, cache
-from deepdiff import DeepDiff
+# from deepdiff import DeepDiff
 
 import os
 import copy
@@ -126,7 +126,7 @@ GAMMA = 0.99#0.95
 #Exploration parameters
 MAX_EPSILON = 1.0
 MIN_EPSILON = 0.6# It actually determines 1-MIN_EPSILON as value of first Epsilon in callbacks
-DECAY_RATE =  0.0005
+DECAY_RATE =  0.005
 
 
 
