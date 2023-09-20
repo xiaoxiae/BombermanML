@@ -65,7 +65,8 @@ def act(self, game_state: Game) -> str:
              
             random_int = random.uniform(0,1)
             if self.train:
-                epsilon =  (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['round']) #MIN_EPSILON +
+                epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['round']) #MIN_EPSILON +
+                self.logger.debug(f"Randomness is at {epsilon}")
 
                 if random_int <= epsilon:
                     action = random.choice(ACTIONS)

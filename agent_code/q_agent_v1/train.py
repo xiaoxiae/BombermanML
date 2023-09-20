@@ -124,9 +124,9 @@ LEARNING_RATE = 0.9#0.7
 MAX_STEPS = 400
 GAMMA = 0.99#0.95
 #Exploration parameters
-MAX_EPSILON = 1.0
-MIN_EPSILON = 0.6# It actually determines 1-MIN_EPSILON as value of first Epsilon in callbacks
-DECAY_RATE =  0.005
+MAX_EPSILON = .4
+MIN_EPSILON = 0.05# It actually determines 1-MIN_EPSILON as value of first Epsilon in callbacks
+DECAY_RATE =  0.001
 
 
 
