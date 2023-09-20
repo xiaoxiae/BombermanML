@@ -69,7 +69,7 @@ def act(self, game_state: Game) -> str:
 
                 if random_int <= epsilon:
                     action = random.choice(ACTIONS)
-                    self.logger.debug(f"***************Choosing  {action}  purely at random in {state}")
+                    self.logger.debug(f"***************Choosing  {action}  purely at random in {state} ")
                     return action
                 # else:
                 # action = np.argmax(list(model_result.values()))
@@ -78,6 +78,7 @@ def act(self, game_state: Game) -> str:
                 # action = list(model_result.keys())[action]
                 action = random.choice(possible_actions)
                 self.logger.info(f"Picking {action} from state {state}.")
+                self.logger.info(f"Number of encountered states: {len(self.model)}  in round: {game_state['round']}.")
                 return action
             # else:
             epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #

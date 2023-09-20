@@ -731,7 +731,7 @@ def _update_model(self,game_state: Game, state: list | None,new_state: list |Non
 
     if new_state is None or self.model.get(new_state) is None:
         self.model[state][action] = self.model[state][action] +( 
-        LEARNING_RATE*(reward + GAMMA * (-10) - self.model[state][action]))
+        LEARNING_RATE*(reward + GAMMA * (GAME_REWARDS[e.INVALID_ACTION]) - self.model[state][action]))
     
 
     elif (self.model[state][action] is not None) and new_state: # if action is valid, update the Qvalue of that state_action
