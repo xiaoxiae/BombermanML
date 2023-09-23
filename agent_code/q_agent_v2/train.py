@@ -57,35 +57,29 @@ EMPTY_FIELD = np.array([
     [-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1],
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 ])
-
-#game rewards to each action of the agent
 # GAME_REWARDS = {
 #     # hunt coins
-#     MOVED_TOWARD_COIN: 2,
-#     DID_NOT_MOVE_TOWARD_COIN: -6,
-#     e.COIN_COLLECTED: 20,#10
+#     MOVED_TOWARD_COIN: 50,
+#     DID_NOT_MOVE_TOWARD_COIN: -100,
+
 #     # hunt people
-#     e.KILLED_OPPONENT: 10,
-#     MOVED_TOWARD_PLAYER: 1,
-#     DID_NOT_MOVE_TOWARD_PLAYER: -3,
+#     MOVED_TOWARD_PLAYER: 25,
+#     DID_NOT_MOVE_TOWARD_PLAYER: -10,
+
 #     # blow up crates
-#     MOVED_TOWARD_CRATE: 3,
-#     DID_NOT_MOVE_TOWARD_CRATE: -9,
+#     MOVED_TOWARD_CRATE: 1,
+
 #     # basic stuff
-#     e.GOT_KILLED: -30,#-15
-#     e.KILLED_SELF: -30,#-30
-#     e.SURVIVED_ROUND: 30,
-#     e.INVALID_ACTION: -200,#-50
-#     MOVED_TOWARD_SAFETY: 100,#25
-#     DID_NOT_MOVE_TOWARD_SAFETY: -100,#-50
+#     e.INVALID_ACTION: -300,#-100
+#     DID_NOT_MOVE_TOWARD_SAFETY: -500,
+
 #     # be active!
-#     USELESS_WAIT: -120,#-80
+#     USELESS_WAIT: -100,
+
 #     # meaningful bombs
-#     PLACED_USEFUL_BOMB: 35,#25
-#     PLACED_SUPER_USEFUL_BOMB: 50,#50
-#     DID_NOT_PLACE_USEFUL_BOMB: -50,#-50
-#     e.CRATE_DESTROYED: 5,
-#     e.COIN_FOUND: 0,
+#     PLACED_USEFUL_BOMB: 50,
+#     PLACED_SUPER_USEFUL_BOMB: 150,
+#     DID_NOT_PLACE_USEFUL_BOMB: -500,
 # }
 GAME_REWARDS = {
     # hunt coins
@@ -97,19 +91,20 @@ GAME_REWARDS = {
 
     # blow up crates
     MOVED_TOWARD_CRATE: 5,
+    e.CRATE_DESTROYED: 50,
 
     # basic stuff
-    e.INVALID_ACTION: -300,#-200
-    DID_NOT_MOVE_TOWARD_SAFETY: -250,#-300
+    e.INVALID_ACTION: -500,#-200
+    DID_NOT_MOVE_TOWARD_SAFETY: -1000,#-300
     MOVED_TOWARD_SAFETY: 200,
 
     # be active!
     USELESS_WAIT: -100,#-100
 
     # meaningful bombs
-    PLACED_USEFUL_BOMB: 50,#50,
-    PLACED_SUPER_USEFUL_BOMB: 150,#150,
-    DID_NOT_PLACE_USEFUL_BOMB: -200,#-150
+    PLACED_USEFUL_BOMB: 150,#50,
+    PLACED_SUPER_USEFUL_BOMB: 400,#150,
+    DID_NOT_PLACE_USEFUL_BOMB: -600,#-200
 }
 
 
@@ -302,47 +297,89 @@ def _can_escape_after_placement(game_state: Game) -> bool:
     # if it can escape, it's safe
     return len(_directions_to_safety(game_state)) != 0
 
+def _is_coin(x: int, y: int, state: Game) -> bool:
+    """Return True if the coorinate is a coin."""
+    return (x, y) in state["coins"]
 
-def _directions_to_coins(game_state: Game) -> list[int]:
-    """Return a list with directions to the closest coin."""
-    # no coins
-    if len(game_state['coins']) == 0:
-        return []
+
+def _is_near_crate(x: int, y: int, state: Game) -> bool:
+    """Return True if the given coordinate is near a crate."""
+    for dx, dy in DELTAS:
+        if state['field'][x + dx][y + dy] == 1:
+            return True
+    return False
+
+
+def _is_near_enemy(x: int, y: int, state: Game) -> bool:
+    """Return True if the player is within blast range of the enemy."""
+    for n in state['others']:
+        if n[-1] in _get_blast_coords(x, y):
+            return True
+    return False
+
+
+def _directions_to_thing(game_state: Game, thing: str) -> list[int]:
+    """Return a list with directions to the closest coin / crate / enemy."""
+    if thing == 'coin' and len(game_state['coins']) == 0:
+        return []  # no coins
+    elif thing == 'crate' and 1 not in game_state['field']:
+        return []  # no crates
+    elif thing == 'enemy' and len(game_state['others']) == 0:
+        return []  # no enemies
+
+    # stop conditions for each of the respective things
+    stop_condition = {
+        'coin': _is_coin,
+        'crate': _is_near_crate,
+        'enemy': _is_near_enemy,
+    }[thing]
 
     start = game_state["self"][-1]
     queue = deque([(game_state, 0)])
-    explored = {start: None}
+    explored = {start: [{None}, 0]}
 
-    candidates = set([])
-    candidate_distance = None
+    # if distances to multiple goals is the same
+    goals = set()
+    goal_distances = None
 
     while len(queue) != 0:
-        current_game_state, distance = queue.popleft()
-        current = current_game_state['self'][-1]
+        current_game_state, current_distance = queue.popleft()
+        current_pos = current_game_state['self'][-1]
 
-        if candidate_distance is not None and candidate_distance < distance:
+        # if we found something and the distance to current thing is greater, stop search
+        if goal_distances is not None and goal_distances < current_distance:
             break
 
-        if current in current_game_state["coins"]:
-            # if we're standing on it, return 4 (i.e. wait)
-            if current == start:
+        # stop condition (did we find what we wanted?)
+        if stop_condition(*current_pos, current_game_state):
+            if current_pos == start:
                 return [4]
 
             # otherwise backtrack
-            while explored[current] != start:
-                current = explored[current]
+            current_pos_set = {current_pos}
 
-            candidates.add(DELTAS.index((current[0] - start[0], current[1] - start[1])))
-            candidate_distance = distance
-            continue
+            while True:
+                next_pos_set = set.union(*[explored[i][0] for i in current_pos_set])
 
-        for (dx, dy), action in zip(DELTAS, ACTIONS):
-            neighbor = (current[0] + dx, current[1] + dy)
+                if next_pos_set == {start}:
+                    break
 
-            if neighbor in explored:
+                current_pos_set = next_pos_set
+
+            for current_pos in current_pos_set:
+                goals.add(DELTAS.index((current_pos[0] - start[0], current_pos[1] - start[1])))
+                goal_distances = current_distance
                 continue
 
-            explored[neighbor] = current
+        # otherwise keep exploring
+        for (dx, dy), action in zip(DELTAS, ACTIONS):
+            neighbor = (current_pos[0] + dx, current_pos[1] + dy)
+
+            if neighbor in explored:
+                if explored[neighbor][1] == current_distance + 1:
+                    explored[neighbor][0].add(current_pos)
+
+                continue
 
             if _tile_is_free(current_game_state, *neighbor):
                 new_game_state = _next_game_state(current_game_state, action)
@@ -350,112 +387,12 @@ def _directions_to_coins(game_state: Game) -> list[int]:
                 if new_game_state is None:
                     continue
 
-                queue.append((new_game_state, distance + 1))
+                explored[neighbor] = [{current_pos}, current_distance + 1]
+                queue.append((new_game_state, current_distance + 1))
 
-    return list(candidates)
-
-def _directions_to_enemy(game_state: Game) ->list[int]:
-    """Return a list with directions to the closest enemy."""
-    if len(game_state['others']) == 0:
-        return []
-
-    start = game_state["self"][-1]
-    queue = deque([(game_state, 0)])
-    explored = {start: None}
-
-    candidates = set([])
-    candidate_distance = None
-
-    while len(queue) != 0:
-        current_game_state, distance = queue.popleft()
-        current = current_game_state['self'][-1]
-
-        for n in current_game_state['others']:
-            # if placing a bomb would kill another player, we're here
-            # if n[-1]  in _get_blast_coords(*current):
-            if n[-1] in _get_blast_coords(*current):
-                # if we're at the start, index 4 signals "place a bomb now"
-                if current == start:
-                    return [4]
-
-                while explored[current] != start:
-                    current = explored[current]
-
-                candidates.add(DELTAS.index((current[0] - start[0], current[1] - start[1])))
-                candidate_distance = distance
-
-                break
-
-        if candidate_distance is not None and candidate_distance < distance:
-            break
-
-        for (dx, dy), action in zip(DELTAS, ACTIONS):
-            neighbor = (current[0] + dx, current[1] + dy)
-
-            if neighbor in explored:
-                continue
-
-            explored[neighbor] = current
-
-            if _tile_is_free(current_game_state, *neighbor):
-                new_game_state = _next_game_state(current_game_state, action)
-
-                if new_game_state is None:
-                    continue
-
-                queue.append((new_game_state, distance + 1))
-
-    return list(candidates)
+    return list(goals)
 
 
-def _directions_to_crates(game_state: Game) -> list[int]:
-    """Return a list with directions to the closest crate."""
-    # no crates
-    if 1 not in game_state['field']:
-        return []
-
-    start = game_state["self"][-1]
-    queue = deque([(game_state, 0)])
-    explored = {start: None}
-
-    candidates = set([])
-    candidate_distance = None
-
-    while len(queue) != 0:
-        current_game_state, distance = queue.popleft()
-        current = current_game_state['self'][-1]
-
-        if candidate_distance is not None and candidate_distance < distance:
-            break
-
-        for (dx, dy), action in zip(DELTAS, ACTIONS):
-            neighbor = (current[0] + dx, current[1] + dy)
-
-            if neighbor in explored:
-                continue
-
-            explored[neighbor] = current
-
-            if _tile_is_free(current_game_state, *neighbor):
-                new_game_state = _next_game_state(current_game_state, action)
-
-                if new_game_state is None:
-                    continue
-
-                queue.append((new_game_state, distance + 1))
-            elif current_game_state['field'][neighbor[0]][neighbor[1]] == 1:
-                # if we're at the start, index 4 signals "place a bomb now"
-                if current == start:
-                    return [4]
-
-                while explored[current] != start:
-                    current = explored[current]
-
-                candidates.add(DELTAS.index((current[0] - start[0], current[1] - start[1])))
-                candidate_distance = distance
-                continue
-
-    return list(candidates)
 
 def _is_in_danger(game_state) -> bool:
     """Return True if the player will be killed if it doesn't move (i.e. is in danger)."""
@@ -465,8 +402,24 @@ def _is_in_danger(game_state) -> bool:
             return True
     return False
 
-def _directions_to_safety(game_state) -> list[int]:
-    """Return the directions to safety, if the player is currently in danger of dying."""
+def player_to_closest_bomb_distance(game_state) -> int:
+    """Return the distance from the player to the closest bomb."""
+    x, y = game_state['self'][3]
+    min_distance = float('inf')
+    for ((bx, by), _) in game_state['bombs']:
+        distance = abs(bx - x) + abs(by - y)
+
+        if distance < min_distance:
+            min_distance = distance
+
+    return min_distance
+
+
+def _directions_to_safety(game_state, include_unsafe=False) -> list[int]:
+    """Return the directions to safety, if the player is currently in danger of dying.
+
+    If there are NO directions to safety and include_unsafe is true,
+    return the direction to the state that was furthest away from a bomb."""
 
     if not _is_in_danger(game_state):
         return []
@@ -475,12 +428,25 @@ def _directions_to_safety(game_state) -> list[int]:
 
     valid_actions = set()
 
+    furthest_actions_distance = 0
+    furthest_actions = set()
+
     while len(queue) != 0:
         current_game_state, action_history = queue.popleft()
 
         if not _is_in_danger(current_game_state):
             valid_actions.add(action_history[0])
             continue
+
+        distance_from_closest_bomb = player_to_closest_bomb_distance(current_game_state)
+
+        if len(action_history) > 1:
+            if distance_from_closest_bomb > furthest_actions_distance:
+                furthest_actions_distance = distance_from_closest_bomb
+                furthest_actions = set()
+
+            if distance_from_closest_bomb == furthest_actions_distance:
+                furthest_actions.add(action_history[0])
 
         for action in ACTIONS[:5]:
             new_game_state = _next_game_state(current_game_state, action)
@@ -489,6 +455,9 @@ def _directions_to_safety(game_state) -> list[int]:
                 continue
 
             queue.append((new_game_state, list(action_history) + [action]))
+
+    if len(valid_actions) == 0 and include_unsafe:
+        return [ACTIONS.index(action) for action in furthest_actions]
 
     return [ACTIONS.index(action) for action in valid_actions]
 
@@ -512,21 +481,20 @@ def _state_to_features(game_state: tuple | None) -> list | None:
     }
 
     feature_vector = [0] * FEATURE_VECTOR_SIZE
-    # feature_vector[21] = game_state['self'][3]
 
-    if v := _directions_to_coins(game_state):
+    if v := _directions_to_thing(game_state, 'coin'):
         for i in v:
             feature_vector[i] = 1
 
-    if v := _directions_to_crates(game_state):
+    if v := _directions_to_thing(game_state, 'crate'):
         for i in v:
             feature_vector[i + 5] = 1
 
-    if v := _directions_to_enemy(game_state):
+    if v := _directions_to_thing(game_state, 'enemy'):
         for i in v:
             feature_vector[i + 10] = 1
 
-    if v := _directions_to_safety(game_state):
+    if v := _directions_to_safety(game_state, include_unsafe=True):
         for i in v:
             feature_vector[i + 15] = 1
 
@@ -538,18 +506,12 @@ def _state_to_features(game_state: tuple | None) -> list | None:
         for i in range(3):
             for j in range(5):
                 feature_vector[j + 5 * i] &= feature_vector[j + 15]
-    else:
-        # TODO: directions away from the bomb
-        #  if an enemy is blocking the way, it's still better to just run away from the bomb
-        #  the code is probably the same but we ignore all player positions
-        pass
 
     if game_state["self"][2] and _can_escape_after_placement(game_state):
         feature_vector[20] = 1
 
     # feature 14 is 'place a bomb to kill player' so that needs to be masked with 20
     feature_vector[14] &= feature_vector[20]
-
     return feature_vector
 
 
@@ -703,7 +665,8 @@ def _update_model(self,game_state: Game, state: list | None,new_state: list |Non
     if new_state:# if New_state is not None, which means we haven't invalid action
         new_state = tuple(new_state)
 
-    
+    if self.model.get(state) is None:
+        self.model[state]= dict.fromkeys(ACTIONS, ZERO)
 
     if new_state is None or self.model.get(new_state) is None: # invalid action or not such state in the model then penalize the agent with invalid action
         self.model[state][action] = self.model[state][action] +( 
@@ -728,10 +691,7 @@ def setup_training(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    self.total_reward = 0
-    self.previous_action = None
-
-    
+    self.total_reward = 0 
 
     if os.path.exists(MODEL_PATH):
         with open(MODEL_PATH, 'rb') as file:

@@ -53,7 +53,7 @@ def act(self, game_state: Game) -> str:
                 self.logger.debug(f"Randomness is at {epsilon}")
 
                 if random_int <= epsilon: # Go for random action for a decreasing percentage of randomness
-                    action = random.choice(ACTIONS[:5])# without bomb
+                    action = random.choice(ACTIONS)# without bomb
                     self.logger.debug(f"***************Choosing  {action}  purely at random in {state} ")
                     return action
                 # Choose from the Q_Table the best action that is stored, if more than one best action, choose one randomly
@@ -67,7 +67,7 @@ def act(self, game_state: Game) -> str:
             # epsilon =  MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * np.exp(-DECAY_RATE * game_state['step']) #
             epsilon = .03
             if random_int <= epsilon:
-                action = random.choice(ACTIONS[:5])
+                action = random.choice(ACTIONS)
                 self.logger.debug(f"*************Choosing {action} purely at random in {state}")
                 return action
             # Choosing from Q_Table
@@ -79,5 +79,6 @@ def act(self, game_state: Game) -> str:
         # Add the new state to the q_table
         action = random.choice(ACTIONS)
         self.model[state]= dict.fromkeys(ACTIONS, ZERO)
+        # print(state)
         return action
         
