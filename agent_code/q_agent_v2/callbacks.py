@@ -2,7 +2,7 @@
 import pickle
 import random
 
-from agent_code.q_agent_v1.train import *
+from .train import *
 
 
 
