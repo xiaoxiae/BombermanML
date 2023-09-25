@@ -3,17 +3,6 @@ from pathlib import Path
 import os
 
 
-# TASKS = {
-#     "1": [
-#         "--no-gui --agents distance_agent --scenario coin-heaven --n-rounds 100",
-#     ],
-#     "2": [
-#         "--no-gui --agents distance_agent --scenario coin-heaven --n-rounds 50",
-#         "--no-gui --agents distance_agent peaceful_agent --scenario empty --n-rounds 1000",
-#         "--no-gui --agents distance_agent peaceful_agent --scenario classic --n-rounds 10000",
-#     ]
-# }
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -25,22 +14,12 @@ if __name__ == "__main__":
     tasks = {
     "1": [
         f"--no-gui --agents {arguments.training_agent} --scenario coin-heaven --n-rounds 5000",#1000
-        f"--no-gui --agents {arguments.training_agent} --scenario sparse-crate --n-rounds 20000",#2000
-        f"--no-gui --agents {arguments.training_agent} --scenario loot-crate --n-rounds 20000",#2000
-        # f"--no-gui --agents {arguments.training_agent} rule_based_agent --scenario sparse-crate --n-rounds 10000",#2000
+        f"--no-gui --agents {arguments.training_agent} --scenario sparse-crate --n-rounds 30000",#2000
+        f"--no-gui --agents {arguments.training_agent} peaceful_agent --scenario sparse-crate --n-rounds 40000",#2000
+        f"--no-gui --agents {arguments.training_agent} peaceful_agent --scenario classic --n-rounds 40000",#2000
+        f"--no-gui --agents {arguments.training_agent} peaceful_agent rule_based_agent --scenario classic --n-rounds 40000",#2000
+        f"--no-gui --agents {arguments.training_agent} rule_based_agent rule_based_agent rule_based_agent --scenario classic --n-rounds 40000",#2000
 
-    ],
-    # "2": [
-    #     # f"--no-gui --agents {arguments.training_agent} --scenario coin-heaven --n-rounds 100",
-    #     # f"--no-gui --agents {arguments.training_agent} peaceful_agent --scenario empty --n-rounds 1000",
-    #     # f"--no-gui --agents {arguments.training_agent} rule_based_agent peaceful_agent --scenario classic --n-rounds 1000",
-    #     f"--no-gui --agents {arguments.training_agent} rule_based_agent rule_based_agent --scenario classic --n-rounds 500",
-    # ]
-        "2": [
-        f"--no-gui --agents {arguments.training_agent} --scenario coin-heaven --n-rounds 2000",
-        f"--no-gui --agents {arguments.training_agent} peaceful_agent --scenario empty --n-rounds 2000",
-        f"--no-gui --agents {arguments.training_agent} rule_based_agent peaceful_agent --scenario classic --n-rounds 2000",
-        f"--no-gui --agents {arguments.training_agent} rule_based_agent rule_based_agent --scenario classic --n-rounds 2000",
     ]
 }
 
@@ -50,6 +29,3 @@ if __name__ == "__main__":
 
     for command in tasks[arguments.task]:
         os.system(f"python main.py play --train 1 {command}")
-
-    #how to run:
-    #python train.py 2 q_agent

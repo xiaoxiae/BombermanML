@@ -1,6 +1,5 @@
 from collections import  deque
 from functools import lru_cache
-# from deepdiff import DeepDiff
 
 import os
 import copy
@@ -57,30 +56,7 @@ EMPTY_FIELD = np.array([
     [-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1],
     [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 ])
-# GAME_REWARDS = {
-#     # hunt coins
-#     MOVED_TOWARD_COIN: 50,
-#     DID_NOT_MOVE_TOWARD_COIN: -100,
 
-#     # hunt people
-#     MOVED_TOWARD_PLAYER: 25,
-#     DID_NOT_MOVE_TOWARD_PLAYER: -10,
-
-#     # blow up crates
-#     MOVED_TOWARD_CRATE: 1,
-
-#     # basic stuff
-#     e.INVALID_ACTION: -300,#-100
-#     DID_NOT_MOVE_TOWARD_SAFETY: -500,
-
-#     # be active!
-#     USELESS_WAIT: -100,
-
-#     # meaningful bombs
-#     PLACED_USEFUL_BOMB: 50,
-#     PLACED_SUPER_USEFUL_BOMB: 150,
-#     DID_NOT_PLACE_USEFUL_BOMB: -500,
-# }
 GAME_REWARDS = {
     # hunt coins
     MOVED_TOWARD_COIN:50,#50,
