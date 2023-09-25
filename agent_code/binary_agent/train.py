@@ -64,11 +64,11 @@ GAME_REWARDS = {
 BATCH_SIZE = 256  # number of transitions sampled from replay buffer
 MEMORY_SIZE = 1000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
-EPS_START = 0.10  # starting value of epsilon (for taking random actions)
-EPS_END = 0.05  # ending value of epsilon
+EPS_START = 0.00  # starting value of epsilon (for taking random actions)
+EPS_END = 0.00  # ending value of epsilon
 EPS_DECAY = 10  # how many rounds until full decay
 TAU = 1e-3  # update rate of the target network
-LR = 1e-4  # learning rate of the optimizer
+LR = 1e-5  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
 LAYER_SIZES = [1024, 1024]  # sizes of hidden layers
 
