@@ -160,6 +160,11 @@ if __name__ == "__main__":
                                                       "Useful for changing the k-factor.",
                                 action='store_true')
 
+    remove_subparser = subparsers.add_parser("remove", add_help=False,
+                                             help="Removes an agent.")
+
+    remove_subparser.add_argument("agent", help="The name of the agent to remove.")
+
     stats_subparser = subparsers.add_parser("stats", add_help=False,
                                             help="Prints statistics about the current elos of agents.")
 
@@ -175,6 +180,28 @@ if __name__ == "__main__":
     duel_subparser.add_argument("agent2", help="Second duelist")
 
     arguments = parser.parse_args()
+
+    if arguments.mode == 'remove':
+        if not os.path.exists(STATS_FILE):
+            print("No stats file calculated, run `python elo.py base` first!")
+            sys.exit(1)
+
+        stats = load_stats()
+
+        if arguments.agent in stats["other"]:
+            del stats["other"][arguments.agent]
+
+            i = 0
+            while i < len(stats["other_games"]):
+                if arguments.agent in stats["other_games"][i]:
+                    stats["other_games"].pop(i)
+                else:
+                    i += 1
+
+        print_stats(stats)
+        save_stats(stats)
+
+        sys.exit(0)
 
     if arguments.mode == 'stats':
         if not os.path.exists(STATS_FILE):
