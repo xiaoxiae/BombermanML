@@ -8,18 +8,22 @@ import os
 # if None is specified, it's the name of the agent
 TASKS = {
     "1": [
-        (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
+        (["--scenario", "coin-heaven", "--n-rounds", "100"], True),
     ],
     "complete": [
         (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
         (["rule_based_agent", "--scenario", "empty", "--n-rounds", "1000"], False),
         (["--scenario", "classic", "--n-rounds", "1000"], False),
         (["rule_based_agent", "--scenario", "classic", "--n-rounds", "200"], True),
-        (["binary_agent_v3", "--scenario", "classic", "--n-rounds", "200"], True),
+        (["binary_agent_v5", "--scenario", "classic", "--n-rounds", "200"], True),
         ([None, "--scenario", "classic", "--n-rounds", "200"], True),
     ],
     "self": [
         ([None, "--scenario", "classic", "--n-rounds", "100"], True),
+        (["binary_agent_v5", "--scenario", "classic", "--n-rounds", "100"], True),
+    ],
+    "binary": [
+        (["binary_agent_v3", "binary_agent_v4", "--scenario", "classic", "--n-rounds", "100"], True),
     ],
     "multiple": [
         (["--scenario", "coin-heaven", "--n-rounds", "100"], False),
