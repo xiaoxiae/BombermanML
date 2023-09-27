@@ -488,7 +488,7 @@ def _directions_to_safety(game_state) -> list[int]:
 def _state_to_features(game_state: tuple | None) -> list | None:
     """
     # 0 self position
-    # 2..5 - direction to closest coin -- u, r, d, l, wait and direction to safety; has a one only if is in danger -- u, r, d, l, wait
+    # 1..5 - direction to closest coin -- u, r, d, l, wait and direction to safety; has a one only if is in danger -- u, r, d, l, wait
     # 6..10 - direction to closest crate -- u, r, d, l, place a bomb and direction to where placing a bomb will hurt another player -- u, r, d, l, place now 
     
     """

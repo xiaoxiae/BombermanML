@@ -18,7 +18,7 @@ if __name__ == "__main__":
         f"--no-gui --agents {arguments.training_agent} peaceful_agent --scenario sparse-crate --n-rounds 40000",#2000
         f"--no-gui --agents {arguments.training_agent} peaceful_agent --scenario classic --n-rounds 40000",#2000
         f"--no-gui --agents {arguments.training_agent} peaceful_agent rule_based_agent --scenario classic --n-rounds 40000",#2000
-        f"--no-gui --agents {arguments.training_agent} rule_based_agent rule_based_agent rule_based_agent --scenario classic --n-rounds 40000",#2000
+        f"--no-gui --agents {arguments.training_agent} rule_based_agent rule_based_agent rule_based_agent --scenario classic --n-rounds 100000",#2000
 
     ]
 }
