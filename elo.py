@@ -3,6 +3,7 @@ import copy
 import json
 import numpy as np
 import os
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -72,7 +73,7 @@ def get_games_played(stats, agent=None):
     return games
 
 
-def print_stats(stats, agent=None, graph=False):
+def print_stats(stats, agent=None, graph=None):
     def _format_agent_stats(agents: dict):
         return {agent: f"{elo_and_std[0]:.01f} +- {elo_and_std[1]:.01f}" for (agent, elo_and_std) in agents.items()}
 
@@ -112,6 +113,9 @@ def print_stats(stats, agent=None, graph=False):
         combined = stats['base'] | stats['other']
 
         agents = sorted(list(stats['base'].keys())) + sorted(list(stats['other'].keys()))
+
+        agents = [a for a in agents if re.match(graph, a)]
+
         elos = [combined[a][0] for a in agents]
         errors = [combined[a][1] for a in agents]
 
@@ -170,8 +174,8 @@ if __name__ == "__main__":
 
     stats_subparser.add_argument("--agent", type=str, help="Prints more detailed statistics about one specific agent.")
 
-    stats_subparser.add_argument("--graph", help="Whether to also display a nice matplotlib graph.",
-                                 action='store_true')
+    stats_subparser.add_argument("--graph", type=str, help="Whether to also display a nice matplotlib graph."
+                                 "The string is a regex for matching which agents to graph.")
 
     duel_subparser = subparsers.add_parser("duel", help="Plays a match between two agents.")
 
