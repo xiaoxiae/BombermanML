@@ -32,6 +32,12 @@ TASKS = {
         (["rule_based_agent", "--scenario", "classic", "--n-rounds", "1000"], True),
         ([None, None, None, "--scenario", "classic", "--n-rounds", "200"], True),
     ],
+    "q-table": [
+        (["--scenario", "coin-heaven", "--n-rounds", "200"], False),
+        (["rule_based_agent", "--scenario", "empty", "--n-rounds", "300"], False),
+        (["--scenario", "classic", "--n-rounds", "500"], False),
+        (["rule_based_agent", "--scenario", "classic", "--n-rounds", "500"], True),
+    ],
 }
 
 if __name__ == "__main__":
@@ -42,6 +48,7 @@ if __name__ == "__main__":
                         default='complete')
     parser.add_argument("--continue", help="Continue training (instead of removing the network).", action="store_true")
     parser.add_argument("--infinite", help="Train indefinitely, repeating the last n commands.", type=int)
+    parser.add_argument("--quick", help="Run a duel against rule_based_agent instead of calculating elo.", action="store_true")
 
     arguments = parser.parse_args()
 
@@ -51,7 +58,7 @@ if __name__ == "__main__":
     # remove the current network (a new one will be trained)
     if not vars(arguments)['continue']:
         for file in agent_directory.iterdir():
-            if file.suffix == ".pt":
+            if file.suffix == ".pt" or file.suffix == ".pkl":
                 file.unlink()
 
     # yeah, I know, I'm going to hell
@@ -73,17 +80,25 @@ if __name__ == "__main__":
         agent_model_directory.mkdir(exist_ok=True)
         for file in agent_directory.iterdir():
             # save .pt (networks) and .txt (other data)
-            for suffix in [".pt", ".txt"]:
+            for suffix in [".pt", ".txt", ".pkl"]:
                 if file.suffix == suffix:
                     shutil.copy(str(file), (agent_model_directory / file.name).with_suffix(f"{suffix}.{i}"))
 
         if calculate_elo:
-            print("Calculating the agent's elo against the others.")
+            if vars(arguments)['quick']:
+                print("Running a duel against rule_based_agent")
 
-            result = subprocess.Popen(
-                ["python", "elo.py", "-n", "100", "--no-save", "agent", arguments.agent],
-                stdout=subprocess.PIPE,
-            ).communicate()
+                result = subprocess.Popen(
+                    ["python", "elo.py", "-n", "20", "duel", arguments.agent, "rule_based_agent"],
+                    stdout=subprocess.PIPE,
+                ).communicate()
+            else: 
+                print("Calculating the agent's elo against the others.")
+
+                result = subprocess.Popen(
+                    ["python", "elo.py", "-n", "100", "--no-save", "agent", arguments.agent],
+                    stdout=subprocess.PIPE,
+                ).communicate()
 
             elo = result[0].decode()
             print(elo)
