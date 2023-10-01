@@ -123,6 +123,9 @@ def print_stats(stats, agent=None, graph=None):
 
         default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
+        # hack
+        default_colors[1], default_colors[6] = default_colors[6], default_colors[1]
+
         # very dirty but works
         colors = [None] * len(agents)
         colors[0] = default_colors[0]
