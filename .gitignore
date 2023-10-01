@@ -3,6 +3,7 @@ elo/
 models*
 logs*
 ignored/
+*.pdf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
