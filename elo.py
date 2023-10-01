@@ -119,7 +119,23 @@ def print_stats(stats, agent=None, graph=None):
         elos = [combined[a][0] for a in agents]
         errors = [combined[a][1] for a in agents]
 
-        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+        # very dirty but works
+        colors = [None] * len(agents)
+        colors[0] = default_colors[0]
+
+        i = 1
+        j = 0
+        while i < len(colors):
+            if agents[i][:3] != agents[i - 1][:3]:
+                j += 1
+
+            print(j)
+
+            colors[i] = default_colors[j]
+
+            i += 1
 
         ax.bar(agents, elos, yerr=errors, label=agents, color=colors)
         plt.xticks(rotation=45)
