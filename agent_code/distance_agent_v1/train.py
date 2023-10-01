@@ -48,34 +48,58 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 DELTAS = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
-GAME_REWARDS = { # for untrained agent
+GAME_REWARDS = {
     # hunt coins
-    MOVED_TOWARD_COIN: 4,
-    DID_NOT_MOVE_TOWARD_COIN: -6,     # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
-    e.COIN_COLLECTED: 15,              # 10 * game reward
+    MOVED_TOWARD_COIN: 50,
+    DID_NOT_MOVE_TOWARD_COIN: -100,
+
     # hunt people
-    e.KILLED_OPPONENT: 20,             # 10 * game reward # good action lies in the past
-    MOVED_TOWARD_PLAYER: 2,
-    DID_NOT_MOVE_TOWARD_PLAYER: -4,
+    MOVED_TOWARD_PLAYER: 25,
+    DID_NOT_MOVE_TOWARD_PLAYER: -10,
+
     # blow up crates
-    MOVED_TOWARD_CRATE: 2,
-    DID_NOT_MOVE_TOWARD_CRATE: -4,
+    MOVED_TOWARD_CRATE: 1,
+
     # basic stuff
-    e.GOT_KILLED: -60,                 # as bad as giving someone else a kill reward
-    e.KILLED_SELF: 0,                   # not worse than being killed, so don't punish it (?)
-    e.SURVIVED_ROUND: 0,                # dying is already punished, and standing in a corner until the timer runs out should not be rewarded
-    e.INVALID_ACTION: -20,              # better than placing a bad bomb or suicide, but really not good
-    MOVED_TOWARD_SAFETY: 5,
-    DID_NOT_MOVE_TOWARD_SAFETY: -20,
+    e.INVALID_ACTION: -100,
+    DID_NOT_MOVE_TOWARD_SAFETY: -500,
+
     # be active!
-    USELESS_WAIT: -1,                   # it may be good to wait until an explosion is over, so this shouldn't be penalized too much; must not be higher than INVALID_ACTION
+    USELESS_WAIT: -100,
+
     # meaningful bombs
-    PLACED_USEFUL_BOMB: 15,
-    PLACED_SUPER_USEFUL_BOMB: 45,
-    DID_NOT_PLACE_USEFUL_BOMB: -15,     # should be way more than what is gained by running away from the bomb
-    e.CRATE_DESTROYED: 3,               # maybe it's bad to reward this because the action that led to this event lies in the past and we're already rewarding good bomb placement
-    e.COIN_FOUND: 0,                    # agent cannot influence this, so don't reward it (?)
+    PLACED_USEFUL_BOMB: 50,
+    PLACED_SUPER_USEFUL_BOMB: 150,
+    DID_NOT_PLACE_USEFUL_BOMB: -500,
 }
+
+# GAME_REWARDS = { # for untrained agent
+#     # hunt coins
+#     MOVED_TOWARD_COIN: 4,
+#     DID_NOT_MOVE_TOWARD_COIN: -6,       # should be lower than MOVED_TOWARD_SAFETY, but at least as high as MOVED_TOWARD_COIN (in magnitude)
+#     e.COIN_COLLECTED: 15,               # 10 * game reward
+
+#     # hunt people
+#     MOVED_TOWARD_PLAYER: 2,
+#     DID_NOT_MOVE_TOWARD_PLAYER: -1,
+
+#     # blow up crates
+#     MOVED_TOWARD_CRATE: 1,
+#     DID_NOT_MOVE_TOWARD_CRATE: -1,
+
+#     # basic stuff
+#     e.GOT_KILLED: -60,                  # as bad as giving someone else a kill reward
+#     e.INVALID_ACTION: -20,              # better than placing a bad bomb or suicide, but really not good
+#     DID_NOT_MOVE_TOWARD_SAFETY: -20,
+
+#     # be active!
+#     USELESS_WAIT: -1,                   # it may be good to wait until an explosion is over, so this shouldn't be penalized too much; must not be higher than INVALID_ACTION
+
+#     # meaningful bombs
+#     PLACED_USEFUL_BOMB: 30,
+#     PLACED_SUPER_USEFUL_BOMB: 80,
+#     DID_NOT_PLACE_USEFUL_BOMB: -100,     # should be way more than what is gained by running away from the bomb
+# }
 
 # GAME_REWARDS = { # for experienced agent
 #     # hunt coins
@@ -115,7 +139,7 @@ MEMORY_SIZE = 3000  # number of transitions to keep in the replay buffer
 GAMMA = 0.99  # discount factor (for rewards in future states)
 EPS_START = 0.08  # starting value of epsilon (for taking random actions)
 EPS_END = 0.0  # ending value of epsilon
-EPS_DECAY = 30  # how many steps until full epsilon decay (not quite true; 'EPS_END' is only attained at infinity)
+EPS_DECAY = 100  # how many steps until full epsilon decay (not quite true; 'EPS_END' is only attained at infinity)
 TAU = 1e-4  # update rate of the target network
 LR = 1e-4  # learning rate of the optimizer
 OPTIMIZER = optim.Adam  # the optimizer
@@ -778,7 +802,7 @@ def setup_training(self):
     ax = plt.axes()
     self.line1, = ax.plot([], [], color='blue', label='game score')
     self.line2, = ax.plot([], [], color='red', label='reward/100', linestyle='dashed', linewidth=1)
-    self.line3, = ax.plot([], [], color='green', label='steps/10')
+    self.line3, = ax.plot([], [], color='green', label='steps/40')
     ax.legend(loc='lower left')
 
     plt.show(block=False)
@@ -825,7 +849,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: list[str
     self.y.append(last_game_state['self'][1])
     self.plot_reward.append(self.plot_reward_accum / 100)
     self.plot_reward_accum = 0
-    self.plot_steps.append(last_game_state['step'] / 10)
+    self.plot_steps.append(last_game_state['step'] / 40)
 
     self.line1.set_data(self.x, self.y)
     self.line2.set_data(self.x, self.plot_reward)

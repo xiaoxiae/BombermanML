@@ -89,7 +89,7 @@ if __name__ == "__main__":
                 print("Running a duel against rule_based_agent")
 
                 result = subprocess.Popen(
-                    ["python", "elo.py", "-n", "20", "duel", arguments.agent, "rule_based_agent"],
+                    ["python", "elo.py", "-n", "50", "duel", arguments.agent, "rule_based_agent"],
                     stdout=subprocess.PIPE,
                 ).communicate()
             else: 
