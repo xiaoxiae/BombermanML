@@ -14,6 +14,7 @@ BASE_AGENTS = ["coin_collector_agent", "peaceful_agent", "random_agent", "rule_b
 
 GAMES_FILE = "elo/elo.log"
 STATS_FILE = "elo/stats.json"
+GRAPH_FILE = "elo/elo.pdf"
 
 
 def play_games(games_to_play: dict[tuple[str, str], int]):
@@ -108,7 +109,8 @@ def print_stats(stats, agent=None, graph=None):
         print(json.dumps(agent_scores, indent=4, sort_keys=True))
 
     if graph:
-        fig, ax = plt.subplots()
+        fig = plt.figure(figsize=(12, 6))
+        ax = plt.axes()
 
         combined = stats['base'] | stats['other']
 
@@ -137,6 +139,9 @@ def print_stats(stats, agent=None, graph=None):
 
             i += 1
 
+        for i in range(len(agents)):
+            agents[i] = agents[i] + f"\n$\\bf{{{int(elos[i])}}} \pm {int(errors[i])}$"
+
         ax.bar(agents, elos, yerr=errors, label=agents, color=colors)
         plt.xticks(rotation=45)
 
@@ -145,6 +150,8 @@ def print_stats(stats, agent=None, graph=None):
 
         plt.gcf().subplots_adjust(bottom=0.3)
 
+        plt.tight_layout()
+        plt.savefig(GRAPH_FILE)
         plt.show()
 
 
