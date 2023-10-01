@@ -28,6 +28,7 @@ The repository contains (in addition to the original repository) the following f
 │   ├── q_agent_v1
 │   ├── q_agent_v2
 │   └── q_agent_v3
+├── graphs      # matplotlib graphs for the agent report
 ├── elo         # elo data
 ├── elo.py      # script for calculating elo
 ├── train.py    # script for training agents
