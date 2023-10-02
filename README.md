@@ -7,7 +7,7 @@ The repository contains (in addition to the original repository) the following f
 ```
 .
 ├── agent_code
-│   │   # binary agents (features are binary vectors)
+│   :   # binary agents (features are binary vectors)
 │   ├── binary_agent
 │   ├── binary_agent_v1
 │   ├── binary_agent_v2
