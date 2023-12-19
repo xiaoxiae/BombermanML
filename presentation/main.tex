@@ -40,7 +40,7 @@
 	\pause
 
 	\begin{itemize}
-		\item \textbf{6 actions} -- 5 movement directions + place bomb
+		\item \textbf{6 actions} -- 4 movement directions + wait + place bomb
 		\item destructible crates, indestructible walls
 		\item \textbf{+1} for coin, \textbf{+5} for killing opponent
 	\end{itemize}
@@ -50,7 +50,7 @@
 	\end{center}
 \end{frame}
 
-\begin{frame}{Available Methods}
+\begin{frame}{Methods Used}
 	\pause
 
 	\textbf{Q-learning} -- optimizing action-value Q-function:
@@ -64,9 +64,7 @@
 
 	Updating Q-values:
 	\begin{itemize}
-		\item \textbf{SARSA:} TODO
 		\item \textbf{TD:} TODO
-		\item \textbf{n-step TD:} TODO
 	\end{itemize}
 
 	\vspace{1.2em}
@@ -176,6 +174,7 @@ TASKS = {
 
 \begin{frame}[fragile]
 	\frametitle{Training Parameters}
+	% NOTE: mention the event rewards only intermediate
 	\pause
 	\vspace{-1.3em}% not nice
 	\begin{minipage}[t]{.5\textwidth}
@@ -187,6 +186,7 @@ BATCH_SIZE = 256
 MEMORY_SIZE = 1000
 
 # chances of picking random action
+# happens per-round, not per-epoch!
 EPS_START = 0.99
 EPS_END = 0.05
 EPS_DECAY = 10
@@ -256,11 +256,19 @@ DID_NOT_PLACE_USEFUL_BOMB: -500
 \section{Q-table}
 
 \begin{frame}{Overview}
-	TODO
-
 	\pause
+	\begin{figure}[t]
+			\centering
+			\includegraphics[width=.8\linewidth]{a.pdf}
+	\end{figure}
+\end{frame}
 
-	More TODO
+\begin{frame}{Overview}
+	\pause
+	\begin{figure}[t]
+			\centering
+			\includegraphics[width=.8\linewidth]{b.pdf}
+	\end{figure}
 \end{frame}
 
 \section{Conclusion}
