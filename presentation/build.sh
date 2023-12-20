@@ -1,5 +1,5 @@
 #!/usr/bin/sh
 lualatex -shell-escape main.tex
 lualatex -shell-escape main.tex
-biblatex main.aux
+bibtex main.aux
 lualatex -shell-escape main.tex
