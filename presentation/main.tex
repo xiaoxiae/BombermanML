@@ -20,7 +20,7 @@
 \subtitle{\large with Q-table and Neural Networks}
 \author{\small Behrooz Montazeran\texorpdfstring{\\}{,} Jannis Heising\texorpdfstring{\\}{,} Tomáš Sláma}
 \titlegraphic{\includegraphics[scale=20]{demolitionist.png}}
-\date{28. 11. 2023}
+\date{20. 12. 2023}
 
 \newcommand{\faEyeRegular}{\faEye[regular]}
 
@@ -62,10 +62,11 @@
 	\vspace{1.2em}
 	\pause
 
-	Updating Q-values:
-	\begin{itemize}
-		\item \textbf{TD:} TODO
-	\end{itemize}
+	\textbf{TD update} -- Use best possible predicted value in next step:
+	\begin{align*}
+	     Y_t &\leftarrow R_t + \gamma \cdot \max_a Q(s_{t+1}, a),\\
+	     Q(s_t, a_t) &\leftarrow Q(s_t, a_t) + \mu \cdot \left(Y_t - Q(s_t, a_t)\right).
+	 \end{align*}
 
 	\vspace{1.2em}
 	\pause
@@ -255,26 +256,29 @@ DID_NOT_PLACE_USEFUL_BOMB: -500
 
 \section{Q-table}
 
-\begin{frame}{Overview}
+\begin{frame}{Storing Q-Table}
 	\pause
 	\begin{itemize}
-		\item Theoretically $207 \times 2^21 \times = 2.60466278e9$ possible states
+		\item Theoretically $207 \times 2^{21} \times 6 = 2.60466278e9$ possible states
 		\item $207$ free tiles for the agent to go
-		\item $2 ^21$ possible actions-state pairs
+		\item $2^{21}$ possible actions-state pairs
 		\item $6$ actions
 	\end{itemize}
 
 	\begin{figure}[t]
 			\centering
-			\includegraphics[width=.8\linewidth]{Q-table.png}
+			\includegraphics[width=1\linewidth]{Q-table.png}
 	\end{figure}
 \end{frame}
 
-\begin{frame}{Overview}
-	\pause
+\begin{frame}{Storing Q-Table}
+	\begin{center}
+	In reality, agent encounters much fewer states
+	\end{center}
+
 	\begin{figure}[t]
 			\centering
-			\includegraphics[width=.8\linewidth]{table.png}
+			\includegraphics[width=1\linewidth]{table.png}
 	\end{figure}
 \end{frame}
 
